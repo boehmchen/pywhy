@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "python-whyline"
+version = "0.1.0"
+description = ""
+authors = ["Lukas Boehme <lukas.boehme@icloud.com>"]
+readme = "README.md"
+packages = [{include = "python_whyline"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+jupyter = "^1.1.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
