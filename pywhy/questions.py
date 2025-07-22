@@ -22,7 +22,6 @@ class Answer:
     question: 'Question'
     explanation: str
     evidence: List[TraceEvent]
-    confidence: float = 1.0  # 0.0 to 1.0
     
     def __str__(self) -> str:
         return self.explanation

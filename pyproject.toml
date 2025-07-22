@@ -1,16 +1,19 @@
 [tool.poetry]
-name = "python-whyline"
-version = "0.1.0"
-description = ""
 authors = ["Lukas Boehme <lukas.boehme@icloud.com>"]
+description = "Whyline for Python"
+name = "pywhy"
+packages = [{include = "pywhy"}]
 readme = "README.md"
-packages = [{include = "python_whyline"}]
+version = "0.1.0"
 
 [tool.poetry.dependencies]
-python = "^3.12"
 jupyter = "^1.1.1"
+python = "^3.12"
 
+[tool.poetry.group.dev.dependencies]
+jupyterlab-widgets = "^3.0.15"
+jupyterlab = "^4.4.5"
 
 [build-system]
-requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core"]

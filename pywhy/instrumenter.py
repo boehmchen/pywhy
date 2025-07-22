@@ -119,7 +119,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         
         # Add import for the tracer
         import_stmt = ast.ImportFrom(
-            module='python_whyline.tracer',
+            module='pywhy.tracer',
             names=[ast.alias(name='get_tracer', asname=None)],
             level=0,
             lineno=1,
@@ -462,12 +462,12 @@ def exec_instrumented(source_code: str, globals_dict: Dict[str, Any] = None) -> 
     if 'if __name__ == "__main__":' in code_to_run:
         code_to_run = code_to_run.replace('if __name__ == "__main__":', 'if True:')
         print("(Modified __name__ check to run main code)")
-    
+ 
     try:
         if sys.version_info >= (3, 9):
             # Use string-based approach for Python 3.9+
             instrumented_code = instrument_code(code_to_run, "<string>")
-            exec(instrumented_code, globals_dict, globals_dict)
+            exec(instrumented_code, globals_dict)
         else:
             # Use AST-based approach for Python < 3.9
             tree = ast.parse(code_to_run, filename="<string>")
@@ -510,34 +510,3 @@ def instrument_file(source_file: str, output_file: str = None) -> str:
         return source_code
 
 
-# Test the fixed instrumenter
-if __name__ == "__main__":
-    # Test code
-    test_code = '''
-def factorial(n):
-    if n <= 1:
-        return 1
-    else:
-        result = n * factorial(n - 1)
-        return result
-
-x = 5
-y = factorial(x)
-print(f"Result: {y}")
-'''
-    
-    try:
-        print("Testing fixed instrumenter...")
-        instrumented = instrument_code(test_code)
-        print("✅ Instrumentation successful!")
-        
-        if isinstance(instrumented, str):
-            print("\nInstrumented code:")
-            print(instrumented)
-        else:
-            print("\nInstrumented code compiled successfully (code object)")
-            
-    except Exception as e:
-        print(f"❌ Instrumentation failed: {e}")
-        import traceback
-        traceback.print_exc()
