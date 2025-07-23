@@ -1,202 +1,200 @@
-# Python Whyline Test Suite
+# Pywhy Test Suite
 
-This directory contains comprehensive unit tests for the Python Whyline implementation using Python's unittest framework.
+This directory contains comprehensive tests for the Pywhy implementation using pytest.
 
 ## Test Structure
 
 ### Core Test Modules
 
-- **`test_core_tracing.py`** - Tests core tracing functionality
-  - Event recording and retrieval
-  - Event structure validation
-  - Tracer statistics and operations
-  - Variable history tracking
+- **`test_instrumentation.py`** - Tests AST instrumentation functionality
+  - Basic assignments, functions, control flow, loops
+  - Advanced constructs: classes, nested functions, recursion
+  - Data structure operations and exception handling
+  - Complex algorithms and performance testing
 
-- **`test_ast_instrumentation.py`** - Tests AST instrumentation
-  - Function instrumentation
-  - Control flow (if/else, loops)
-  - Class and method instrumentation
-  - Recursive functions
-  - Error handling
-
-- **`test_question_system.py`** - Tests question/answer system
-  - All question types (variable values, line execution, function returns)
-  - Question formatting and caching
-  - Answer accuracy and evidence
-  - Edge cases with non-existent variables
-
-- **`test_edge_cases.py`** - Tests edge cases and complex scenarios
-  - Complex Python constructs (lambdas, generators, decorators)
-  - Deep recursion handling
-  - Variable scoping scenarios
-  - Exception handling
-  - Data structure operations
-  - Import scenarios
-  - Thread safety
-  - Memory management
-
-- **`test_cli_integration.py`** - Tests CLI functionality
-  - CLI creation and initialization
-  - Code loading and execution
-  - Question creation through CLI
-  - File loading and error handling
-  - Command line interface testing
-
-- **`test_performance.py`** - Tests performance characteristics
-  - Execution performance
-  - Memory usage
-  - Question answering performance
-  - Concurrent execution
-  - Scaling characteristics
+- **`test_trace_dsl.py`** - Tests the tracing DSL functionality
+  - TraceEventBuilder fluent API testing
+  - TraceSequence high-level pattern testing
+  - EventMatcher utility testing
+  - JSON serialization and event validation
 
 ### Test Infrastructure
 
-- **`test_runner.py`** - Main test runner with colored output
-- **`conftest.py`** - Test configuration and utilities
+- **`conftest.py`** - Pytest configuration and fixtures
+  - Shared test fixtures (tracer, builders, temp files)
+  - Helper assertion functions
+  - Sample code snippets for testing
+  - Parametrized fixtures for comprehensive testing
+
 - **`__init__.py`** - Test package initialization
 
 ## Running Tests
 
+### Prerequisites
+```bash
+pip install pytest
+```
+
 ### Run All Tests
 ```bash
-cd python_whyline/tests
-python test_runner.py
+cd pywhy/tests
+pytest
 ```
 
 ### Run Specific Test Categories
 ```bash
-# Core functionality only
-python test_runner.py --category core
+# DSL functionality tests
+pytest -m dsl
 
-# Question system only
-python test_runner.py --category questions
+# Unit tests
+pytest -m unit
 
-# CLI tests only
-python test_runner.py --category cli
+# Integration tests  
+pytest -m integration
 
-# Performance tests only
-python test_runner.py --category performance
+# Performance tests
+pytest -m performance
 
-# Edge cases only
-python test_runner.py --category edge_cases
+# CLI tests (if available)
+pytest -m cli
 ```
 
-### Run Specific Test Classes
+### Run Specific Test Files
 ```bash
-# Run core tracing tests
-python test_runner.py --specific core
+# Run instrumentation tests
+pytest test_instrumentation.py
 
-# Run AST instrumentation tests
-python test_runner.py --specific ast
+# Run DSL tests
+pytest test_trace_dsl.py
+
+# Run specific test class
+pytest test_instrumentation.py::TestBasicInstrumentation
 
 # Run specific test method
-python test_runner.py --specific core test_basic_event_recording
+pytest test_instrumentation.py::TestBasicInstrumentation::test_simple_assignment_instrumentation
 ```
 
-### Other Options
+### Useful Pytest Options
 ```bash
+# Verbose output
+pytest -v
+
 # Stop on first failure
-python test_runner.py --failfast
+pytest -x
 
-# Increase verbosity
-python test_runner.py --verbose
+# Show local variables in traceback
+pytest -l
 
-# Multiple categories
-python test_runner.py --category core --category questions
+# Run in parallel (requires pytest-xdist)
+pytest -n auto
+
+# Generate coverage report (requires pytest-cov)
+pytest --cov=pywhy
 ```
 
-### Run Individual Test Files
-```bash
-# Run specific test file
-python test_core_tracing.py
-python test_question_system.py
-python -m unittest test_edge_cases.TestEdgeCases.test_deep_recursion
+## Test Categories (Pytest Markers)
+
+### 🧪 **Unit Tests** (`@pytest.mark.unit`)
+- Individual component testing
+- Basic functionality validation
+- Isolated feature testing
+
+### 🔗 **Integration Tests** (`@pytest.mark.integration`)
+- Component interaction testing
+- End-to-end workflow validation
+- Cross-module functionality
+
+### 📝 **DSL Tests** (`@pytest.mark.dsl`)
+- Domain Specific Language testing
+- TraceEventBuilder and TraceSequence
+- Event matching and validation
+
+### ⚡ **Performance Tests** (`@pytest.mark.performance`)
+- Execution speed validation
+- Memory usage testing
+- Scalability assessment
+
+### 🐌 **Slow Tests** (`@pytest.mark.slow`)
+- Tests that take significant time
+- Can be skipped for quick runs: `pytest -m "not slow"`
+
+## Test Features
+
+### 🎯 **Parametrized Testing**
+Tests use `@pytest.mark.parametrize` for comprehensive coverage:
+```python
+@pytest.mark.parametrize("condition,result", [
+    ("x > 0", True),
+    ("y < 10", False),
+    ("z == 0", True)
+])
+def test_condition_events_parametrized(self, trace_builder, condition, result):
+    # Test with multiple parameter combinations
 ```
 
-## Test Categories
+### 🏗️ **Fixture-Based Architecture**
+All tests use pytest fixtures for clean setup/teardown:
+- `tracer`: Clean tracer instance
+- `trace_builder`: Fresh TraceEventBuilder
+- `trace_sequence`: Fresh TraceSequence
+- `instrumented_execution`: Execute code with instrumentation
+- `temp_file`/`temp_dir`: Temporary files with automatic cleanup
 
-### 📊 **Core Tests** (`core`)
-- Basic tracing functionality
-- AST instrumentation
-- Event recording and structure
+### 🔍 **DSL-Powered Assertions**
+Custom assertion helpers using the DSL:
+```python
+assert_has_event_type(events, EventType.ASSIGN, min_count=3)
+assert_variable_value_event(events, "x", 10)
+assert_function_called(events, "my_func", [1, 2, 3])
+assert_performance_bounds(execution_time, 2.0, "Operation")
+```
 
-### ❓ **Question Tests** (`questions`)
-- Question/answer system
-- All question types
-- Answer accuracy
-
-### 🔀 **Edge Case Tests** (`edge_cases`)
-- Complex Python constructs
-- Error handling
-- Memory management
-- Thread safety
-
-### 💻 **CLI Tests** (`cli`)
-- Command line interface
-- Interactive functionality
-- File loading
-
-### ⚡ **Performance Tests** (`performance`)
-- Execution speed
-- Memory usage
-- Scalability
+### 📊 **Sample Code Testing**
+Parametrized fixture tests all sample codes automatically:
+```python
+def test_all_sample_codes_instrument_successfully(self, sample_code_execution):
+    execution = sample_code_execution
+    assert len(execution['events']) > 0
+    # Automatically tests: simple_assignment, function_call, control_flow, 
+    # loop, recursion, class_usage, exception_handling, complex_program
+```
 
 ## Expected Results
 
-### ✅ **Passing Tests**
-All test categories should pass with 100% success rate:
-- Core functionality: All basic operations work
-- Question system: All question types answered correctly
-- Edge cases: Complex scenarios handled properly
-- CLI: Interactive interface functional
-- Performance: Meets speed and memory requirements
+### ✅ **Success Criteria**
+- All unit tests pass (basic functionality)
+- DSL tests validate event creation and matching
+- Integration tests confirm end-to-end workflows
+- Performance tests meet timing requirements
 
 ### 📊 **Performance Benchmarks**
-- Basic execution: < 2 seconds
-- Large programs: < 5 seconds
-- Deep recursion: < 3 seconds
-- Question answering: < 0.1 seconds per question
-- Memory usage: < 100MB increase for typical programs
+- Simple instrumentation: < 1 second
+- Complex algorithms: < 5 seconds  
+- Deep recursion (50 levels): < 3 seconds
+- Event processing: > 1000 events/second
 
-### 🎯 **Success Criteria**
-- All core tests pass (essential functionality)
-- Question system accuracy 100% (main feature)
-- Edge cases handled gracefully (robustness)
-- CLI fully functional (usability)
-- Performance within acceptable limits (efficiency)
+### 🎯 **Coverage Goals**
+- All core instrumentation functionality
+- Complete DSL API coverage
+- Error handling and edge cases
+- Performance characteristics validation
 
-## Test Output
+## Sample Test Output
 
-The test runner provides colored output:
-- ✅ Green for passing tests
-- ❌ Red for failing tests
-- ⚠️ Yellow for skipped tests
+```bash
+$ pytest -v
+========================= test session starts =========================
+platform darwin -- Python 3.11.0
+collected 45 items
 
-Example output:
-```
-🧪 PYTHON WHYLINE TEST SUITE
-==================================================
-Running 45 tests...
-
-✅ test_core_tracing.TestCoreTracing.test_basic_event_recording ... ok
-✅ test_core_tracing.TestCoreTracing.test_event_structure ... ok
+test_instrumentation.py::TestBasicInstrumentation::test_simple_assignment_instrumentation PASSED [4%]
+test_instrumentation.py::TestBasicInstrumentation::test_function_definition_and_call PASSED [8%]
+test_trace_dsl.py::TestTraceEventBuilder::test_basic_assignment_creation PASSED [12%]
+test_trace_dsl.py::TestTraceEventBuilder::test_function_events_creation PASSED [16%]
 ...
+test_instrumentation.py::TestInstrumentationPerformance::test_deep_recursion_performance PASSED [100%]
 
-==================================================
-📊 TEST SUMMARY
-==================================================
-Total tests run: 45
-✅ Successes: 45
-❌ Failures: 0
-❌ Errors: 0
-⚠️ Skipped: 0
-⏱️ Execution time: 12.34s
-📈 Success rate: 100.0%
-
-==================================================
-🎉 ALL TESTS PASSED!
-✅ Python Whyline implementation is working correctly
-==================================================
+========================= 45 passed in 12.34s =========================
 ```
 
 ## Troubleshooting
@@ -204,52 +202,93 @@ Total tests run: 45
 ### Common Issues
 
 1. **Import Errors**
-   - Ensure you're running from the correct directory
-   - Check that parent directories are in Python path
+   ```bash
+   # Ensure you're in the right directory
+   cd pywhy/tests
+   # Or add to PYTHONPATH
+   export PYTHONPATH=$PYTHONPATH:$(pwd)/../..
+   ```
 
-2. **Missing Dependencies**
-   - Performance tests require `psutil`: `pip install psutil`
-   - Some tests may be skipped if dependencies unavailable
+2. **Missing Modules**
+   ```bash
+   # Install missing dependencies
+   pip install pytest pytest-cov pytest-xdist
+   ```
 
-3. **Timeout Issues**
-   - Performance tests have timeouts for slow systems
-   - Adjust timeout values in `conftest.py` if needed
-
-4. **CLI Tests Failing**
-   - Ensure CLI scripts are in correct location
-   - Check file permissions for CLI execution
+3. **Slow Tests**
+   ```bash
+   # Skip slow tests for quick runs
+   pytest -m "not slow"
+   # Or run only fast tests
+   pytest -m "unit and not slow"
+   ```
 
 ### Debug Mode
 ```bash
-# Run with maximum verbosity
-python test_runner.py --verbose --verbose
+# Maximum verbosity with locals
+pytest -vvv -l
 
-# Run single test for debugging
-python test_runner.py --specific core test_basic_event_recording
+# Drop into debugger on failure
+pytest --pdb
 
-# Stop on first failure for quick debugging
-python test_runner.py --failfast
+# Run specific failing test
+pytest test_instrumentation.py::TestBasicInstrumentation::test_simple_assignment_instrumentation -vvv
 ```
 
 ## Contributing
 
-When adding new tests:
+### Adding New Tests
 
-1. **Follow naming conventions**: `test_*.py` for files, `test_*` for methods
-2. **Use appropriate test categories**: Add to existing modules or create new ones
-3. **Include performance considerations**: Add timing assertions for new features
-4. **Add to test runner**: Update categories in `test_runner.py` if needed
-5. **Document expected behavior**: Clear assertions with meaningful messages
+1. **Follow pytest conventions**:
+   - File names: `test_*.py`
+   - Function names: `test_*`
+   - Class names: `Test*`
+
+2. **Use appropriate markers**:
+   ```python
+   @pytest.mark.unit
+   @pytest.mark.dsl
+   @pytest.mark.performance
+   ```
+
+3. **Leverage fixtures**:
+   ```python
+   def test_my_feature(self, tracer, instrumented_execution):
+       # Use provided fixtures
+   ```
+
+4. **Use DSL assertions**:
+   ```python
+   from conftest import assert_has_event_type
+   assert_has_event_type(events, EventType.ASSIGN, min_count=1)
+   ```
+
+5. **Add parametrized tests** for multiple scenarios:
+   ```python
+   @pytest.mark.parametrize("input,expected", [
+       (1, 1), (2, 4), (3, 9)
+   ])
+   def test_square(self, input, expected):
+       assert square(input) == expected
+   ```
+
+### Test Organization
+
+- **Unit tests**: Test individual components in isolation
+- **Integration tests**: Test component interactions
+- **Performance tests**: Validate timing and resource usage
+- **DSL tests**: Validate the tracing domain-specific language
 
 ## Test Coverage
 
-The test suite covers:
-- ✅ All core functionality (tracing, instrumentation, questions)
-- ✅ All question types and edge cases
-- ✅ CLI interface and user interactions
-- ✅ Performance and scalability
-- ✅ Error handling and robustness
-- ✅ Complex Python language features
-- ✅ Memory management and threading
+The test suite provides comprehensive coverage of:
 
-This ensures the Python Whyline implementation is thoroughly validated and ready for production use.
+- ✅ **Core Instrumentation**: All AST transformation functionality
+- ✅ **DSL API**: Complete TraceEventBuilder and TraceSequence APIs
+- ✅ **Event System**: Event creation, matching, and validation
+- ✅ **Performance**: Timing bounds and resource usage
+- ✅ **Error Handling**: Graceful failure and recovery
+- ✅ **Complex Scenarios**: Real-world Python code patterns
+- ✅ **Integration**: End-to-end workflow validation
+
+This ensures the Pywhy implementation is thoroughly tested and production-ready.
