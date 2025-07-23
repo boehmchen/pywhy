@@ -7,6 +7,7 @@ import os
 import tempfile
 import shutil
 from pathlib import Path
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -170,6 +171,18 @@ class TestEnvironment:
 
 # Global test environment
 test_env = TestEnvironment()
+
+@pytest.fixture
+def test_environment():
+    """Pytest fixture for test environment"""
+    env = TestEnvironment()
+    yield env
+    env.cleanup()
+
+@pytest.fixture
+def test_codes():
+    """Pytest fixture for common test codes"""
+    return COMMON_TEST_CODES
 
 def get_test_code(name):
     """Get common test code by name"""

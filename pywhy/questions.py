@@ -4,19 +4,10 @@ Allows users to ask "why" and "why not" questions about program execution.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Set, Tuple
-from dataclasses import dataclass
-from enum import Enum
-
+from typing import List, Any, Optional
+from dataclasses import dataclass, field
 from .tracer import TraceEvent, WhylineTracer
 
-
-class QuestionType(Enum):
-    WHY_DID = "why_did"
-    WHY_DIDNT = "why_didnt"
-
-
-@dataclass
 class Answer:
     """Base class for answers to questions"""
     question: 'Question'
@@ -30,11 +21,7 @@ class Answer:
 @dataclass
 class ValueSourceAnswer(Answer):
     """Answer explaining where a value came from"""
-    source_events: List[TraceEvent] = None
-    
-    def __post_init__(self):
-        if self.source_events is None:
-            self.source_events = []
+    source_events: List[TraceEvent] = field(default_factory=list)
     
     def __str__(self) -> str:
         if not self.source_events:
@@ -47,14 +34,8 @@ class ValueSourceAnswer(Answer):
 @dataclass
 class ExecutionAnswer(Answer):
     """Answer explaining why code executed or didn't execute"""
-    execution_events: List[TraceEvent] = None
-    dependencies: List[TraceEvent] = None
-    
-    def __post_init__(self):
-        if self.execution_events is None:
-            self.execution_events = []
-        if self.dependencies is None:
-            self.dependencies = []
+    execution_events: List[TraceEvent] = field(default_factory=list)
+    dependencies: List[TraceEvent] = field(default_factory=list)
     
     def __str__(self) -> str:
         if self.execution_events:
@@ -151,124 +132,6 @@ class WhyDidVariableHaveValue(Question):
         )
 
 
-class WhyDidLineExecute(Question):
-    """Question about why a specific line executed"""
-    
-    def __init__(self, tracer: WhylineTracer, filename: str, line_no: int):
-        super().__init__(tracer, f"line {line_no}", f"Why did line {line_no} execute")
-        self.filename = filename
-        self.line_no = line_no
-        
-    def analyze(self) -> ExecutionAnswer:
-        """Find why the line executed"""
-        # Find all events on this line
-        # Handle filename mismatch between CLI (example.py) and tracer (<string>)
-        line_events = [event for event in self.tracer.events
-                      if event.lineno == self.line_no and 
-                      (event.filename == self.filename or 
-                       event.filename == "<string>" or
-                       self.filename == "<string>")]
-        
-        if not line_events:
-            explanation = f"Line {self.line_no} never executed"
-            return ExecutionAnswer(
-                question=self,
-                explanation=explanation,
-                evidence=[],
-                execution_events=[],
-                dependencies=[]
-            )
-        
-        # Find control flow dependencies
-        dependencies = self._find_control_dependencies(line_events[0])
-        
-        explanation = f"Line {self.line_no} executed {len(line_events)} times"
-        if dependencies:
-            explanation += f" due to {len(dependencies)} control flow decisions"
-        
-        return ExecutionAnswer(
-            question=self,
-            explanation=explanation,
-            evidence=line_events + dependencies,
-            execution_events=line_events,
-            dependencies=dependencies
-        )
-    
-    def _find_control_dependencies(self, target_event: TraceEvent) -> List[TraceEvent]:
-        """Find control flow events that led to this execution"""
-        dependencies = []
-        
-        # Look for branch events that occurred before this event
-        for event in self.tracer.events:
-            if (event.event_id < target_event.event_id and
-                event.event_type in ['branch', 'condition'] and
-                (event.filename == self.filename or 
-                 event.filename == "<string>" or
-                 self.filename == "<string>")):
-                dependencies.append(event)
-        
-        return dependencies
-
-
-class WhyDidntLineExecute(Question):
-    """Question about why a specific line didn't execute"""
-    
-    def __init__(self, tracer: WhylineTracer, filename: str, line_no: int):
-        super().__init__(tracer, f"line {line_no}", f"Why didn't line {line_no} execute")
-        self.filename = filename
-        self.line_no = line_no
-        
-    def analyze(self) -> ExecutionAnswer:
-        """Find why the line didn't execute"""
-        # Check if the line actually did execute
-        # Handle filename mismatch between CLI (example.py) and tracer (<string>)
-        line_events = [event for event in self.tracer.events
-                      if event.lineno == self.line_no and 
-                      (event.filename == self.filename or 
-                       event.filename == "<string>" or
-                       self.filename == "<string>")]
-        
-        if line_events:
-            explanation = f"Line {self.line_no} actually did execute {len(line_events)} times"
-            return ExecutionAnswer(
-                question=self,
-                explanation=explanation,
-                evidence=line_events,
-                execution_events=line_events,
-                dependencies=[]
-            )
-        
-        # Find nearby control flow to understand why it didn't execute
-        control_flow = self._find_blocking_control_flow()
-        
-        explanation = f"Line {self.line_no} didn't execute"
-        if control_flow:
-            explanation += f" due to control flow decisions on lines {[e.lineno for e in control_flow]}"
-        
-        return ExecutionAnswer(
-            question=self,
-            explanation=explanation,
-            evidence=control_flow,
-            execution_events=[],
-            dependencies=control_flow
-        )
-    
-    def _find_blocking_control_flow(self) -> List[TraceEvent]:
-        """Find control flow events that prevented execution"""
-        blocking_events = []
-        
-        # Look for branch events in the same file
-        for event in self.tracer.events:
-            if (event.event_type in ['branch', 'condition'] and
-                (event.filename == self.filename or 
-                 event.filename == "<string>" or
-                 self.filename == "<string>") and
-                event.lineno < self.line_no):
-                blocking_events.append(event)
-        
-        return blocking_events
-
-
 class WhyDidFunctionReturn(Question):
     """Question about why a function returned a specific value"""
     
@@ -278,7 +141,7 @@ class WhyDidFunctionReturn(Question):
         self.return_value = return_value
         
     def analyze(self) -> ValueSourceAnswer:
-        """Find why the function returned this value"""
+        """Find why the function returned this value using dynamic slicing"""
         # Find return events for this function
         return_events = []
         
@@ -287,25 +150,324 @@ class WhyDidFunctionReturn(Question):
                 event.args and len(event.args) >= 2 and
                 event.args[0] == 'value'):
                 
-                # For now, include all return events since function context is complex
-                # In a more sophisticated implementation, we'd track function call stack
-                return_events.append(event)
+                # Check if this return matches our expected function and value
+                if event.args[1] == self.return_value:
+                    return_events.append(event)
         
-        matching_returns = [e for e in return_events 
-                           if e.args[1] == self.return_value]
-        
-        if not matching_returns:
+        if not return_events:
             explanation = f"No return found for function '{self.func_name}' with value '{self.return_value}'"
-        else:
-            last_return = matching_returns[-1]
-            explanation = f"Function '{self.func_name}' returned '{self.return_value}' at line {last_return.lineno}"
+            return ValueSourceAnswer(
+                question=self,
+                explanation=explanation,
+                evidence=[],
+                source_events=[]
+            )
+        
+        # Use the most recent matching return event
+        target_return = return_events[-1]
+        
+        # Perform dynamic slicing to find data dependencies leading to this return
+        dependencies = self._find_return_dependencies(target_return)
+        
+        explanation = f"Function '{self.func_name}' returned '{self.return_value}' at line {target_return.lineno}"
+        if dependencies:
+            explanation += f" due to {len(dependencies)} data dependencies"
         
         return ValueSourceAnswer(
             question=self,
             explanation=explanation,
-            evidence=matching_returns,
-            source_events=matching_returns
+            evidence=[target_return] + dependencies,
+            source_events=[target_return] + dependencies
         )
+    
+    def _find_return_dependencies(self, return_event: TraceEvent) -> List[TraceEvent]:
+        """Find the chain of events that led to this return value"""
+        dependencies = []
+        
+        # Look for assignments and calculations that contributed to the return value
+        for event in self.tracer.events:
+            if (event.event_id < return_event.event_id and
+                event.event_type in ['assign', 'call_post'] and
+                event.filename == return_event.filename):
+                
+                # Check if any variable in this event's locals matches the return value
+                for var_name, var_value in event.locals_snapshot.items():
+                    if var_value == self.return_value:
+                        dependencies.append(event)
+                        break
+        
+        return dependencies
+
+
+class WhyWasFunctionCalled(Question):
+    """Question about why a function was called"""
+    
+    def __init__(self,
+            tracer: WhylineTracer,
+            func_name: str, call_context: str = None):
+        super().__init__(tracer, func_name, f"Why was function '{func_name}' called")
+        self.func_name = func_name
+        self.call_context = call_context
+        
+    def analyze(self) -> ExecutionAnswer:
+        """Find why the function was called using control flow analysis"""
+        # Find call events for this function
+        call_events = []
+        
+        for event in self.tracer.events:
+            if (event.event_type == 'call_pre' and 
+                event.args and len(event.args) >= 2 and
+                event.args[0] == 'func_name' and 
+                event.args[1] == self.func_name):
+                call_events.append(event)
+        
+        if not call_events:
+            explanation = f"Function '{self.func_name}' was never called"
+            return ExecutionAnswer(
+                question=self,
+                explanation=explanation,
+                evidence=[],
+                execution_events=[],
+                dependencies=[]
+            )
+        
+        # Analyze the most recent call
+        target_call = call_events[-1]
+        
+        # Find control flow dependencies that led to this call
+        dependencies = self._find_call_dependencies(target_call)
+        
+        explanation = f"Function '{self.func_name}' was called {len(call_events)} times"
+        if dependencies:
+            explanation += f" due to {len(dependencies)} control flow decisions"
+        
+        return ExecutionAnswer(
+            question=self,
+            explanation=explanation,
+            evidence=call_events + dependencies,
+            execution_events=call_events,
+            dependencies=dependencies
+        )
+    
+    def _find_call_dependencies(self, call_event: TraceEvent) -> List[TraceEvent]:
+        """Find the control flow events that led to this function call"""
+        dependencies = []
+        
+        # Look for branch and condition events that occurred before the call
+        for event in self.tracer.events:
+            if (event.event_id < call_event.event_id and
+                event.event_type in ['branch', 'condition'] and
+                event.filename == call_event.filename):
+                dependencies.append(event)
+        
+        return dependencies
+
+
+class WhyDidntFieldChange(Question):
+    """Question about why a field's value didn't change after a certain time"""
+    
+    def __init__(self, tracer: WhylineTracer, field_name: str, after_time: float, 
+                 object_id: int = None):
+        super().__init__(tracer, field_name, f"Why didn't field '{field_name}' change after time {after_time}")
+        self.field_name = field_name
+        self.after_time = after_time
+        self.object_id = object_id
+        
+    def analyze(self) -> ExecutionAnswer:
+        """Find why the field wasn't assigned after the given time"""
+        # Find all assignment events to this field after the specified time
+        field_assignments = []
+        potential_assignments = []
+        
+        for event in self.tracer.events:
+            if event.timestamp > self.after_time:
+                # Check for actual assignments
+                if (event.event_type == 'assign' and 
+                    event.args and len(event.args) >= 2 and
+                    event.args[0] == 'var_name' and 
+                    event.args[1] == self.field_name):
+                    field_assignments.append(event)
+                
+                # Check for potential assignment sites (lines that could assign to this field)
+                elif self.field_name in event.locals_snapshot:
+                    potential_assignments.append(event)
+        
+        if field_assignments:
+            explanation = f"Field '{self.field_name}' actually did change {len(field_assignments)} times after the specified time"
+            return ExecutionAnswer(
+                question=self,
+                explanation=explanation,
+                evidence=field_assignments,
+                execution_events=field_assignments,
+                dependencies=[]
+            )
+        
+        # Analyze why potential assignment sites didn't execute or assign
+        blocking_control_flow = self._find_blocking_control_flow_for_field()
+        
+        explanation = f"Field '{self.field_name}' didn't change after the specified time"
+        if blocking_control_flow:
+            explanation += f" due to {len(blocking_control_flow)} control flow decisions"
+        elif potential_assignments:
+            explanation += f", though {len(potential_assignments)} potential assignment sites were reached"
+        
+        return ExecutionAnswer(
+            question=self,
+            explanation=explanation,
+            evidence=blocking_control_flow + potential_assignments,
+            execution_events=[],
+            dependencies=blocking_control_flow
+        )
+    
+    def _find_blocking_control_flow_for_field(self) -> List[TraceEvent]:
+        """Find control flow events that prevented field assignment"""
+        blocking_events = []
+        
+        # Look for branch events after the specified time that might have blocked assignment
+        for event in self.tracer.events:
+            if (event.timestamp > self.after_time and
+                event.event_type in ['branch', 'condition']):
+                blocking_events.append(event)
+        
+        return blocking_events
+
+
+class WhyDidObjectGetCreated(Question):
+    """Question about why an object was created"""
+    
+    def __init__(self, tracer: WhylineTracer, object_type: str, object_id: int = None):
+        super().__init__(tracer, object_type, f"Why did object of type '{object_type}' get created")
+        self.object_type = object_type
+        self.object_id = object_id
+        
+    def analyze(self) -> ExecutionAnswer:
+        """Find why the object was instantiated"""
+        # Find instantiation events (assignments that create new objects)
+        creation_events = []
+        
+        for event in self.tracer.events:
+            if event.event_type == 'assign':
+                # Check if any value in locals looks like an object creation
+                for var_name, var_value in event.locals_snapshot.items():
+                    if (hasattr(var_value, '__class__') and 
+                        var_value.__class__.__name__ == self.object_type):
+                        creation_events.append(event)
+                        break
+        
+        if not creation_events:
+            explanation = f"No creation found for objects of type '{self.object_type}'"
+            return ExecutionAnswer(
+                question=self,
+                explanation=explanation,
+                evidence=[],
+                execution_events=[],
+                dependencies=[]
+            )
+        
+        # Analyze the most recent creation
+        target_creation = creation_events[-1]
+        
+        # Find control flow dependencies that led to this creation
+        dependencies = self._find_creation_dependencies(target_creation)
+        
+        explanation = f"Object of type '{self.object_type}' was created {len(creation_events)} times"
+        if dependencies:
+            explanation += f" due to {len(dependencies)} control flow decisions"
+        
+        return ExecutionAnswer(
+            question=self,
+            explanation=explanation,
+            evidence=creation_events + dependencies,
+            execution_events=creation_events,
+            dependencies=dependencies
+        )
+    
+    def _find_creation_dependencies(self, creation_event: TraceEvent) -> List[TraceEvent]:
+        """Find the control flow events that led to object creation"""
+        dependencies = []
+        
+        # Look for branch and condition events that occurred before the creation
+        for event in self.tracer.events:
+            if (event.event_id < creation_event.event_id and
+                event.event_type in ['branch', 'condition'] and
+                event.filename == creation_event.filename):
+                dependencies.append(event)
+        
+        return dependencies
+
+
+class WhyDidPropertyGetAssigned(Question):
+    """Question about why a property got assigned a specific value"""
+    
+    def __init__(self, tracer: WhylineTracer, property_name: str, value: Any, 
+                 object_id: int = None):
+        super().__init__(tracer, property_name, f"Why did property '{property_name}' get assigned '{value}'")
+        self.property_name = property_name
+        self.value = value
+        self.object_id = object_id
+        
+    def analyze(self) -> ValueSourceAnswer:
+        """Find why the property was assigned this value using data flow analysis"""
+        # Find assignment events for this property
+        assignments = []
+        
+        for event in self.tracer.events:
+            if event.event_type == 'assign':
+                # Check if this looks like a property assignment
+                if (event.args and len(event.args) >= 4 and
+                    event.args[0] == 'var_name' and 
+                    event.args[1] == self.property_name and
+                    event.args[2] == 'value' and
+                    event.args[3] == self.value):
+                    assignments.append(event)
+                
+                # Also check locals for the property
+                elif self.property_name in event.locals_snapshot:
+                    if event.locals_snapshot[self.property_name] == self.value:
+                        assignments.append(event)
+        
+        if not assignments:
+            explanation = f"No assignment found for property '{self.property_name}' with value '{self.value}'"
+            return ValueSourceAnswer(
+                question=self,
+                explanation=explanation,
+                evidence=[],
+                source_events=[]
+            )
+        
+        # Use the most recent assignment
+        target_assignment = assignments[-1]
+        
+        # Find the source of this value through data dependencies
+        dependencies = self._find_value_source_dependencies(target_assignment)
+        
+        explanation = f"Property '{self.property_name}' got value '{self.value}' from assignment at line {target_assignment.lineno}"
+        if dependencies:
+            explanation += f" via {len(dependencies)} data dependencies"
+        
+        return ValueSourceAnswer(
+            question=self,
+            explanation=explanation,
+            evidence=assignments + dependencies,
+            source_events=assignments + dependencies
+        )
+    
+    def _find_value_source_dependencies(self, assignment_event: TraceEvent) -> List[TraceEvent]:
+        """Find where the assigned value originally came from"""
+        dependencies = []
+        
+        # Look for earlier events that produced this value
+        for event in self.tracer.events:
+            if (event.event_id < assignment_event.event_id and
+                event.event_type in ['assign', 'call_post', 'return']):
+                
+                # Check if any value in this event matches our target value
+                if event.args and self.value in event.args:
+                    dependencies.append(event)
+                elif self.value in event.locals_snapshot.values():
+                    dependencies.append(event)
+        
+        return dependencies
 
 
 class QuestionAsker:
@@ -319,14 +481,24 @@ class QuestionAsker:
         """Create a question about why a variable had a specific value"""
         return WhyDidVariableHaveValue(self.tracer, var_name, value, filename, line_no)
     
-    def why_did_line_execute(self, filename: str, line_no: int) -> WhyDidLineExecute:
-        """Create a question about why a line executed"""
-        return WhyDidLineExecute(self.tracer, filename, line_no)
-    
-    def why_didnt_line_execute(self, filename: str, line_no: int) -> WhyDidntLineExecute:
-        """Create a question about why a line didn't execute"""
-        return WhyDidntLineExecute(self.tracer, filename, line_no)
-    
     def why_did_function_return(self, func_name: str, return_value: Any) -> WhyDidFunctionReturn:
         """Create a question about why a function returned a specific value"""
         return WhyDidFunctionReturn(self.tracer, func_name, return_value)
+    
+    def why_was_function_called(self, func_name: str, call_context: str = None) -> WhyWasFunctionCalled:
+        """Create a question about why a function was called"""
+        return WhyWasFunctionCalled(self.tracer, func_name, call_context)
+    
+    def why_didnt_field_change(self, field_name: str, after_time: float, 
+                              object_id: int = None) -> WhyDidntFieldChange:
+        """Create a question about why a field didn't change after a certain time"""
+        return WhyDidntFieldChange(self.tracer, field_name, after_time, object_id)
+    
+    def why_did_object_get_created(self, object_type: str, object_id: int = None) -> WhyDidObjectGetCreated:
+        """Create a question about why an object was created"""
+        return WhyDidObjectGetCreated(self.tracer, object_type, object_id)
+    
+    def why_did_property_get_assigned(self, property_name: str, value: Any, 
+                                    object_id: int = None) -> WhyDidPropertyGetAssigned:
+        """Create a question about why a property got assigned a specific value"""
+        return WhyDidPropertyGetAssigned(self.tracer, property_name, value, object_id)

@@ -6,7 +6,7 @@ This version properly handles AST contexts and node transformation.
 import ast
 import sys
 from typing import Dict, Any, Set, List, Optional, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import copy
 
 
@@ -423,20 +423,11 @@ def instrument_code(source_code: str, filename: str = "<string>") -> str:
     ast.fix_missing_locations(instrumented_tree)
     
     # Convert back to source code
-    if sys.version_info >= (3, 9):
-        try:
-            return ast.unparse(instrumented_tree)
-        except Exception as e:
-            raise ValueError(f"Failed to unparse instrumented AST: {e}")
-    else:
-        # For Python < 3.9, we'll compile directly
-        try:
-            code_obj = compile(instrumented_tree, filename, 'exec')
-            return code_obj
-        except Exception as e:
-            raise ValueError(f"Failed to compile instrumented AST: {e}")
-
-
+    try:
+        return ast.unparse(instrumented_tree)
+    except Exception as e:
+        raise ValueError(f"Failed to unparse instrumented AST: {e}")
+    
 def exec_instrumented(source_code: str, globals_dict: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute instrumented Python code"""
     
@@ -463,21 +454,15 @@ def exec_instrumented(source_code: str, globals_dict: Dict[str, Any] = None) -> 
         code_to_run = code_to_run.replace('if __name__ == "__main__":', 'if True:')
         print("(Modified __name__ check to run main code)")
  
+
     try:
-        if sys.version_info >= (3, 9):
-            # Use string-based approach for Python 3.9+
-            instrumented_code = instrument_code(code_to_run, "<string>")
-            exec(instrumented_code, globals_dict)
-        else:
-            # Use AST-based approach for Python < 3.9
-            tree = ast.parse(code_to_run, filename="<string>")
-            instrumenter = WhylineInstrumenter("<string>")
-            instrumented_tree = instrumenter.visit(tree)
-            ast.fix_missing_locations(instrumented_tree)
+        if sys.version_info < (3, 9):
+            raise RuntimeError("AST-based instrumentation requires Python 3.9 or higher.")
             
-            code_obj = compile(instrumented_tree, '<string>', 'exec')
-            exec(code_obj, globals_dict, globals_dict)
-            
+        # Use string-based approach for Python 3.9+
+        instrumented_code = instrument_code(code_to_run, "<string>")
+        exec(instrumented_code, globals_dict)
+                
     except Exception as e:
         print(f"Error during instrumentation: {e}")
         print("Falling back to original code execution...")
@@ -509,4 +494,352 @@ def instrument_file(source_file: str, output_file: str = None) -> str:
         print(f"Error instrumenting file {source_file}: {e}")
         return source_code
 
+
+# ===== TRACING DSL =====
+# Domain Specific Language for creating and testing tracing events
+
+from enum import Enum
+import json
+
+
+class EventType(Enum):
+    """Types of trace events"""
+    ASSIGN = "assign"
+    ATTR_ASSIGN = "attr_assign"  
+    SUBSCRIPT_ASSIGN = "subscript_assign"
+    AUG_ASSIGN = "aug_assign"
+    FUNCTION_ENTRY = "function_entry"
+    RETURN = "return"
+    CONDITION = "condition"
+    BRANCH = "branch"
+    LOOP_ITERATION = "loop_iteration"
+    WHILE_CONDITION = "while_condition"
+    CALL = "call"
+
+
+@dataclass
+class TraceEvent:
+    """Represents a single trace event"""
+    event_id: int
+    filename: str
+    line_no: int
+    event_type: str
+    data: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary representation"""
+        return {
+            'event_id': self.event_id,
+            'filename': self.filename,
+            'line_no': self.line_no,
+            'event_type': self.event_type,
+            'data': self.data
+        }
+    
+    def to_json(self) -> str:
+        """Convert to JSON string"""
+        return json.dumps(self.to_dict(), indent=2)
+
+
+class TraceEventBuilder:
+    """Fluent API for building trace events"""
+    
+    def __init__(self):
+        self.events: List[TraceEvent] = []
+        self._current_event_id = 0
+        self._filename = "<test>"
+        self._line_no = 1
+        
+    def reset(self) -> 'TraceEventBuilder':
+        """Reset the builder state"""
+        self.events = []
+        self._current_event_id = 0
+        return self
+        
+    def set_filename(self, filename: str) -> 'TraceEventBuilder':
+        """Set the default filename for events"""
+        self._filename = filename
+        return self
+        
+    def set_line(self, line_no: int) -> 'TraceEventBuilder':
+        """Set the default line number for events"""
+        self._line_no = line_no
+        return self
+        
+    def _next_event_id(self) -> int:
+        """Get next event ID"""
+        self._current_event_id += 1
+        return self._current_event_id
+        
+    def _create_event(self, event_type: EventType, data: Dict[str, Any], 
+                     line_no: Optional[int] = None) -> TraceEvent:
+        """Create a new trace event"""
+        event = TraceEvent(
+            event_id=self._next_event_id(),
+            filename=self._filename,
+            line_no=line_no or self._line_no,
+            event_type=event_type.value,
+            data=data
+        )
+        self.events.append(event)
+        return event
+        
+    # Variable assignment events
+    def assign(self, var_name: str, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a variable assignment event"""
+        self._create_event(EventType.ASSIGN, {
+            'var_name': var_name,
+            'value': value
+        }, line_no)
+        return self
+        
+    def attr_assign(self, obj_name: str, attr: str, value: Any, 
+                   line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an attribute assignment event"""
+        self._create_event(EventType.ATTR_ASSIGN, {
+            'obj_attr': attr,
+            'obj': obj_name,
+            'value': value
+        }, line_no)
+        return self
+        
+    def subscript_assign(self, container: str, index: Any, value: Any,
+                        line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a subscript assignment event"""
+        self._create_event(EventType.SUBSCRIPT_ASSIGN, {
+            'container': container,
+            'index': index,
+            'value': value
+        }, line_no)
+        return self
+        
+    def aug_assign(self, var_name: str, value: Any, op: str = "+=",
+                  line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an augmented assignment event"""
+        self._create_event(EventType.AUG_ASSIGN, {
+            'var_name': var_name,
+            'value': value,
+            'operation': op
+        }, line_no)
+        return self
+        
+    # Function events
+    def function_entry(self, func_name: str, args: List[Any], 
+                      line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a function entry event"""
+        self._create_event(EventType.FUNCTION_ENTRY, {
+            'func_name': func_name,
+            'args': args
+        }, line_no)
+        return self
+        
+    def return_event(self, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a return event"""
+        self._create_event(EventType.RETURN, {
+            'value': value
+        }, line_no)
+        return self
+        
+    # Control flow events
+    def condition(self, test_expr: str, result: bool,
+                 line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a condition evaluation event"""
+        self._create_event(EventType.CONDITION, {
+            'test': test_expr,
+            'result': result
+        }, line_no)
+        return self
+        
+    def branch(self, branch_type: str, taken: bool = True,
+              line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a branch event"""
+        self._create_event(EventType.BRANCH, {
+            'taken': "if" if taken else "else",
+            'branch_type': branch_type
+        }, line_no)
+        return self
+        
+    def loop_iteration(self, target: str, iter_value: Any,
+                      line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a loop iteration event"""
+        self._create_event(EventType.LOOP_ITERATION, {
+            'target': target,
+            'iter_value': iter_value
+        }, line_no)
+        return self
+        
+    def while_condition(self, test_expr: str, result: bool,
+                       line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a while condition event"""
+        self._create_event(EventType.WHILE_CONDITION, {
+            'test': test_expr,
+            'result': result
+        }, line_no)
+        return self
+        
+    # Utility methods
+    def build(self) -> List[TraceEvent]:
+        """Return the built trace events"""
+        return self.events.copy()
+        
+    def print_events(self) -> None:
+        """Print all events in a readable format"""
+        for event in self.events:
+            print(f"Event #{event.event_id} ({event.event_type}) at {event.filename}:{event.line_no}")
+            for key, value in event.data.items():
+                print(f"  {key}: {value}")
+            print()
+            
+    def to_json(self) -> str:
+        """Convert all events to JSON"""
+        return json.dumps([event.to_dict() for event in self.events], indent=2)
+
+
+class TraceSequence:
+    """Helper for building sequences of related trace events"""
+    
+    def __init__(self, name: str = "test_sequence"):
+        self.name = name
+        self.builder = TraceEventBuilder()
+        
+    def simple_assignment(self, var: str, value: Any) -> 'TraceSequence':
+        """Add a simple variable assignment"""
+        self.builder.assign(var, value)
+        return self
+        
+    def function_call(self, func_name: str, args: List[Any], 
+                     return_value: Any = None) -> 'TraceSequence':
+        """Add function entry and return events"""
+        self.builder.function_entry(func_name, args)
+        if return_value is not None:
+            self.builder.return_event(return_value)
+        return self
+        
+    def if_statement(self, condition: str, condition_result: bool,
+                    then_assignments: List[tuple] = None,
+                    else_assignments: List[tuple] = None) -> 'TraceSequence':
+        """Add if statement with condition and branch events"""
+        self.builder.condition(condition, condition_result)
+        
+        if condition_result and then_assignments:
+            self.builder.branch("if", True)
+            for var, value in then_assignments:
+                self.builder.assign(var, value)
+        elif not condition_result and else_assignments:
+            self.builder.branch("else", False)  
+            for var, value in else_assignments:
+                self.builder.assign(var, value)
+                
+        return self
+        
+    def for_loop(self, target: str, values: List[Any],
+                body_assignments: List[tuple] = None) -> 'TraceSequence':
+        """Add for loop with iterations"""
+        for value in values:
+            self.builder.loop_iteration(target, value)
+            if body_assignments:
+                for var, val in body_assignments:
+                    self.builder.assign(var, val)
+        return self
+        
+    def build(self) -> List[TraceEvent]:
+        """Build the trace sequence"""
+        return self.builder.build()
+
+
+# Convenience functions for quick event creation
+def trace() -> TraceEventBuilder:
+    """Create a new trace event builder"""
+    return TraceEventBuilder()
+
+def sequence(name: str = "test") -> TraceSequence:
+    """Create a new trace sequence"""
+    return TraceSequence(name)
+
+
+# Test utilities
+class EventMatcher:
+    """Utility for matching and validating trace events"""
+    
+    @staticmethod
+    def has_event_type(events: List[TraceEvent], event_type: EventType) -> bool:
+        """Check if events contain a specific event type"""
+        return any(event.event_type == event_type.value for event in events)
+        
+    @staticmethod
+    def count_event_type(events: List[TraceEvent], event_type: EventType) -> int:
+        """Count events of a specific type"""
+        return sum(1 for event in events if event.event_type == event_type.value)
+        
+    @staticmethod
+    def find_events(events: List[TraceEvent], **filters) -> List[TraceEvent]:
+        """Find events matching the given filters"""
+        matches = []
+        for event in events:
+            match = True
+            for key, value in filters.items():
+                if key == 'event_type':
+                    if event.event_type != value:
+                        match = False
+                        break
+                elif key in event.data:
+                    if event.data[key] != value:
+                        match = False
+                        break
+                else:
+                    match = False
+                    break
+            if match:
+                matches.append(event)
+        return matches
+        
+    @staticmethod
+    def assert_sequence(events: List[TraceEvent], expected_types: List[EventType]) -> bool:
+        """Assert that events follow the expected sequence of types"""
+        if len(events) != len(expected_types):
+            return False
+        return all(
+            event.event_type == expected.value 
+            for event, expected in zip(events, expected_types)
+        )
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    print("=== DSL Example Usage ===\n")
+    
+    # Simple trace building
+    events = (trace()
+              .set_filename("example.py")
+              .assign("x", 5, line_no=1)
+              .assign("y", 10, line_no=2)
+              .function_entry("add", [5, 10], line_no=4)
+              .return_event(15, line_no=5)
+              .build())
+    
+    print("Simple trace events:")
+    for event in events:
+        print(f"  {event.event_type}: {event.data}")
+    
+    print("\n" + "="*50 + "\n")
+    
+    # Using sequence builder
+    seq_events = (sequence("factorial_example")
+                  .function_call("factorial", [5], 120)
+                  .if_statement("n <= 1", False)
+                  .simple_assignment("result", 120)
+                  .build())
+    
+    print("Sequence events:")
+    for event in seq_events:
+        print(f"  {event.event_type}: {event.data}")
+    
+    print("\n" + "="*50 + "\n")
+    
+    # Event matching examples
+    assign_count = EventMatcher.count_event_type(events, EventType.ASSIGN)
+    print(f"Number of assignment events: {assign_count}")
+    
+    function_events = EventMatcher.find_events(events, event_type=EventType.FUNCTION_ENTRY.value)
+    print(f"Function entry events: {len(function_events)}")
 

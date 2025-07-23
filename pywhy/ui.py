@@ -5,13 +5,13 @@ Provides a simple interface for asking questions about program execution.
 
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog
-from typing import Dict, List, Any, Optional
+from typing import List
 import threading
 from dataclasses import dataclass
 
-from .tracer import WhylineTracer, TraceEvent, get_tracer
+from .tracer import get_tracer
 from .questions import QuestionAsker, Question, Answer
-from .instrumenter import instrument_file, exec_instrumented
+from .instrumenter import exec_instrumented
 
 
 @dataclass
