@@ -239,9 +239,13 @@ def assert_has_event_type(events: List[TraceEvent], event_type: EventType, min_c
     # Map DSL event types to tracer event types
     tracer_event_type = event_type.value
     if event_type == EventType.FUNCTION_ENTRY:
-        tracer_event_type = "call_pre"
+        tracer_event_type = "function_entry"
     elif event_type == EventType.RETURN:
         tracer_event_type = "return"
+    elif event_type == EventType.CONDITION:
+        tracer_event_type = "condition"
+    elif event_type == EventType.BRANCH:
+        tracer_event_type = "branch"
     
     actual_count = len([e for e in events if e.event_type == tracer_event_type])
     assert actual_count >= min_count, f"Expected at least {min_count} {event_type.value} events, got {actual_count}"
@@ -278,8 +282,8 @@ def assert_variable_value_event(events: List[TraceEvent], var_name: str, expecte
 
 def assert_function_called(events: List[TraceEvent], func_name: str, expected_args: List[Any] = None):
     """Assert that a function was called with optional argument checking."""
-    # For tracer events, look for call_pre events with function name
-    function_events = [e for e in events if e.event_type == "call_pre"]
+    # For tracer events, look for function_entry events with function name
+    function_events = [e for e in events if e.event_type == "function_entry"]
     
     # Find events with matching function name in args
     matching_events = []

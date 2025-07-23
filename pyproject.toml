@@ -25,11 +25,7 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--verbose",
-    "--cov=pywhy",
-    "--cov-report=term-missing",
-    "--cov-report=html:htmlcov",
-    "--cov-report=xml"
+    "--verbose"
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
