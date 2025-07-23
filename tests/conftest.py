@@ -321,6 +321,53 @@ def assert_event_count_bounds(events: List[TraceEvent], min_count: int, max_coun
         f"{operation_name} recorded {actual_count} events, expected {min_count}-{max_count}"
 
 
+def assert_trace_matches_pattern(actual_events: List[TraceEvent], expected_events: List[Any], strict: bool = False):
+    """Assert that actual tracer events match expected DSL events pattern.
+    
+    Args:
+        actual_events: Events from the tracer
+        expected_events: Events created with DSL trace() builder
+        strict: If True, requires exact match. If False, allows actual to have more events.
+    """
+    if not expected_events:
+        return
+    
+    if strict:
+        assert len(actual_events) == len(expected_events), \
+            f"Expected {len(expected_events)} events, got {len(actual_events)}"
+    else:
+        assert len(actual_events) >= len(expected_events), \
+            f"Expected at least {len(expected_events)} events, got {len(actual_events)}"
+    
+    # Match events by type and key properties
+    expected_idx = 0
+    for actual_event in actual_events:
+        if expected_idx >= len(expected_events):
+            if strict:
+                assert False, f"Too many actual events. Expected {len(expected_events)}, got more"
+            break
+            
+        expected_event = expected_events[expected_idx]
+        
+        # Check if this actual event matches the next expected event
+        if actual_event.event_type == expected_event.event_type:
+            # For assign events, also check variable name
+            if (actual_event.event_type == "assign" and 
+                hasattr(expected_event, 'data') and 
+                'var_name' in expected_event.data):
+                
+                if (len(actual_event.args) >= 2 and 
+                    actual_event.args[0] == 'var_name' and
+                    actual_event.args[1] == expected_event.data['var_name']):
+                    expected_idx += 1
+            else:
+                expected_idx += 1
+    
+    if expected_idx < len(expected_events):
+        unmatched = len(expected_events) - expected_idx
+        assert False, f"Failed to match {unmatched} expected events out of {len(expected_events)}"
+
+
 # Pytest markers for test organization
 def pytest_configure(config):
     """Configure pytest markers."""
