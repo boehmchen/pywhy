@@ -11,6 +11,10 @@ import sys
 
 from pywhy.instrumenter import EventType, exec_instrumented
 from pywhy.trace_dsl import trace
+from pywhy.trace_visualization import (
+    format_trace, compare_traces, display_trace_comparison, 
+    create_test_trace_comparison_function, show_trace_diff, print_trace_comparison
+)
 from .conftest import (
     assert_has_event_type, assert_variable_value_event, assert_function_called,
     assert_performance_bounds, assert_event_count_bounds, assert_trace_matches_pattern
@@ -85,6 +89,45 @@ a = b = 5
                 var_name = expected_event.data['var_name']
                 value = expected_event.data['value']
                 assert_variable_value_event(actual_events, var_name, value)
+        
+        # === TRACE COMPARISON FUNCTIONS FOR JUPYTER ===
+        def show_assignment_trace_comparison():
+            """Display trace comparison for simple assignment test in Jupyter."""
+            try:
+                show_trace_diff(actual_events, expected_trace, "Simple Assignment Test")
+            except ImportError:
+                print_trace_comparison(actual_events, expected_trace, "Simple Assignment Test")
+        
+        def get_assignment_trace_strings():
+            """Get string representations of actual and expected traces."""
+            actual_str = format_trace(actual_events, "Actual Assignment Trace")
+            expected_str = format_trace(expected_trace, "Expected Assignment Trace")
+            comparison = compare_traces(actual_events, expected_trace)
+            diff_str = comparison.diff_str
+            return {
+                'actual': actual_str,
+                'expected': expected_str, 
+                'diff': diff_str,
+                'matches': comparison.matches
+            }
+        
+        def print_assignment_traces():
+            """Print both traces and their diff to console."""
+            traces = get_assignment_trace_strings()
+            print("\n" + "="*60)
+            print(traces['expected'])
+            print("="*60)
+            print(traces['actual'])
+            print("="*60)
+            print("DIFF:")
+            print(traces['diff'] if traces['diff'] else "No differences found.")
+            print("="*60)
+            print(f"Traces match: {traces['matches']}")
+        
+        # Store functions as test attributes for external access
+        self.show_assignment_trace_comparison = show_assignment_trace_comparison
+        self.get_assignment_trace_strings = get_assignment_trace_strings
+        self.print_assignment_traces = print_assignment_traces
     
     def test_function_definition_and_call(self, tracer, instrumented_execution):
         """
@@ -159,6 +202,45 @@ output3 = multiply(3, 5)
         assert_variable_value_event(actual_events, "output", 8)
         assert_variable_value_event(actual_events, "output2", 8)
         assert_variable_value_event(actual_events, "output3", 15)
+        
+        # === TRACE COMPARISON FUNCTIONS FOR JUPYTER ===
+        def show_function_trace_comparison():
+            """Display trace comparison for function definition and call test in Jupyter."""
+            try:
+                show_trace_diff(actual_events, expected_trace, "Function Definition and Call Test")
+            except ImportError:
+                print_trace_comparison(actual_events, expected_trace, "Function Definition and Call Test")
+        
+        def get_function_trace_strings():
+            """Get string representations of actual and expected traces."""
+            actual_str = format_trace(actual_events, "Actual Function Trace")
+            expected_str = format_trace(expected_trace, "Expected Function Trace")
+            comparison = compare_traces(actual_events, expected_trace)
+            diff_str = comparison.diff_str
+            return {
+                'actual': actual_str,
+                'expected': expected_str,
+                'diff': diff_str,
+                'matches': comparison.matches
+            }
+        
+        def print_function_traces():
+            """Print both traces and their diff to console."""
+            traces = get_function_trace_strings()
+            print("\n" + "="*60)
+            print(traces['expected'])
+            print("="*60)
+            print(traces['actual'])
+            print("="*60)
+            print("DIFF:")
+            print(traces['diff'] if traces['diff'] else "No differences found.")
+            print("="*60)
+            print(f"Traces match: {traces['matches']}")
+        
+        # Store functions as test attributes for external access
+        self.show_function_trace_comparison = show_function_trace_comparison
+        self.get_function_trace_strings = get_function_trace_strings
+        self.print_function_traces = print_function_traces
     
     @pytest.mark.parametrize("condition,x_value,expected_result", [
         ("x > 5", 10, "large"),
@@ -782,6 +864,45 @@ tail_fact_result = tail_factorial(5)
         assert_variable_value_event(actual_events, "fib_result", 5)
         assert_variable_value_event(actual_events, "even_result", True)
         assert_variable_value_event(actual_events, "odd_result", True)
+        
+        # === TRACE COMPARISON FUNCTIONS FOR JUPYTER ===
+        def show_recursion_trace_comparison():
+            """Display trace comparison for recursive function test in Jupyter."""
+            try:
+                show_trace_diff(actual_events, expected_trace, "Recursive Function Test")
+            except ImportError:
+                print_trace_comparison(actual_events, expected_trace, "Recursive Function Test")
+        
+        def get_recursion_trace_strings():
+            """Get string representations of actual and expected traces."""
+            actual_str = format_trace(actual_events, "Actual Recursion Trace")
+            expected_str = format_trace(expected_trace, "Expected Recursion Trace")
+            comparison = compare_traces(actual_events, expected_trace)
+            diff_str = comparison.diff_str
+            return {
+                'actual': actual_str,
+                'expected': expected_str,
+                'diff': diff_str,  
+                'matches': comparison.matches
+            }
+        
+        def print_recursion_traces():
+            """Print both traces and their diff to console."""
+            traces = get_recursion_trace_strings()
+            print("\n" + "="*60)
+            print(traces['expected'])
+            print("="*60)
+            print(traces['actual'])
+            print("="*60)
+            print("DIFF:")
+            print(traces['diff'] if traces['diff'] else "No differences found.")
+            print("="*60)
+            print(f"Traces match: {traces['matches']}")
+        
+        # Store functions as test attributes for external access
+        self.show_recursion_trace_comparison = show_recursion_trace_comparison
+        self.get_recursion_trace_strings = get_recursion_trace_strings
+        self.print_recursion_traces = print_recursion_traces
     
     def test_exception_handling_instrumentation(self, tracer, instrumented_execution):
         """
