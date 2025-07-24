@@ -13,10 +13,9 @@ from typing import Dict, Any, List
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pywhy.instrumenter import (
-    EventType, TraceEvent, TraceEventBuilder, TraceSequence, 
-    EventMatcher, trace, sequence, exec_instrumented
-)
+from pywhy.instrumenter import EventType, TraceEvent, exec_instrumented
+from pywhy.trace_analysis import EventMatcher
+from pywhy.trace_dsl import trace
 from pywhy.tracer import get_tracer
 from pywhy.questions import QuestionAsker
 
@@ -136,14 +135,10 @@ def tracer():
 
 @pytest.fixture
 def trace_builder():
-    """Provide a fresh TraceEventBuilder instance."""
+    """Provide a fresh trace builder instance."""
     return trace()
 
 
-@pytest.fixture
-def trace_sequence():
-    """Provide a fresh TraceSequence instance."""
-    return sequence("test_sequence")
 
 
 @pytest.fixture

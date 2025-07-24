@@ -9,7 +9,8 @@ import time
 import sys
 
 
-from pywhy.instrumenter import EventType, exec_instrumented, trace, sequence
+from pywhy.instrumenter import EventType, exec_instrumented
+from pywhy.trace_dsl import trace
 from .conftest import (
     assert_has_event_type, assert_variable_value_event, assert_function_called,
     assert_performance_bounds, assert_event_count_bounds, assert_trace_matches_pattern
@@ -222,12 +223,12 @@ else:
         
         # Create expected trace pattern using DSL
         condition_result = eval(condition.replace('x', str(x_value)))
-        expected_trace = (sequence("conditional_test")
-                         .simple_assignment("x", x_value)
-                         .if_statement(condition, condition_result, 
-                                     [("result", actual_expected)] if condition_result else None,
-                                     [("result", "false_branch")] if not condition_result else None)
-                         .build())
+        # expected_trace = (sequence("conditional_test")
+        #                  .simple_assignment("x", x_value)
+        #                  .if_statement(condition, condition_result, 
+        #                              [("result", actual_expected)] if condition_result else None,
+        #                              [("result", "false_branch")] if not condition_result else None)
+        #                  .build())
         
         # Verify actual trace has expected patterns
         actual_events = tracer.events
@@ -293,14 +294,14 @@ for w in range(1):
         instrumented_execution(code)
         
         # Create expected trace pattern using DSL
-        expected_trace = (sequence("loop_test")
-                         .simple_assignment("total", 0)
-                         .for_loop("i", [0, 1, 2], [("total", "updated")])
-                         .simple_assignment("nested_sum", 0)
-                         .simple_assignment("empty_total", 0)
-                         .simple_assignment("single_total", 0)
-                         .for_loop("w", [0], [("single_total", "updated")])
-                         .build())
+        # expected_trace = (sequence("loop_test")
+        #                  .simple_assignment("total", 0)
+        #                  .for_loop("i", [0, 1, 2], [("total", "updated")])
+        #                  .simple_assignment("nested_sum", 0)
+        #                  .simple_assignment("empty_total", 0)
+        #                  .simple_assignment("single_total", 0)
+        #                  .for_loop("w", [0], [("single_total", "updated")])
+        #                  .build())
         
         # Verify actual trace has expected patterns
         actual_events = tracer.events

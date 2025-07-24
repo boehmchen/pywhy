@@ -14,7 +14,6 @@ This directory contains comprehensive tests for the Pywhy implementation using p
 
 - **`test_trace_dsl.py`** - Tests the tracing DSL functionality
   - TraceEventBuilder fluent API testing
-  - TraceSequence high-level pattern testing
   - EventMatcher utility testing
   - JSON serialization and event validation
 
@@ -106,7 +105,7 @@ pytest --cov=pywhy
 
 ### 📝 **DSL Tests** (`@pytest.mark.dsl`)
 - Domain Specific Language testing
-- TraceEventBuilder and TraceSequence
+- TraceEventBuilder
 - Event matching and validation
 
 ### ⚡ **Performance Tests** (`@pytest.mark.performance`)
@@ -136,7 +135,6 @@ def test_condition_events_parametrized(self, trace_builder, condition, result):
 All tests use pytest fixtures for clean setup/teardown:
 - `tracer`: Clean tracer instance
 - `trace_builder`: Fresh TraceEventBuilder
-- `trace_sequence`: Fresh TraceSequence
 - `instrumented_execution`: Execute code with instrumentation
 - `temp_file`/`temp_dir`: Temporary files with automatic cleanup
 
@@ -284,7 +282,7 @@ pytest test_instrumentation.py::TestBasicInstrumentation::test_simple_assignment
 The test suite provides comprehensive coverage of:
 
 - ✅ **Core Instrumentation**: All AST transformation functionality
-- ✅ **DSL API**: Complete TraceEventBuilder and TraceSequence APIs
+- ✅ **DSL API**: Complete TraceEventBuilder API
 - ✅ **Event System**: Event creation, matching, and validation
 - ✅ **Performance**: Timing bounds and resource usage
 - ✅ **Error Handling**: Graceful failure and recovery

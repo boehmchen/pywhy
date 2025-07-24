@@ -1,0 +1,167 @@
+"""
+Domain-specific language for building trace events.
+Provides fluent API for creating trace events in tests and utilities.
+"""
+import json
+from typing import List, Dict, Any, Optional
+from .instrumenter import TraceEvent, EventType
+
+
+class TraceEventBuilder:
+    """Fluent API for building trace events"""
+    
+    def __init__(self):
+        self.events: List[TraceEvent] = []
+        self._current_event_id = 0
+        self._filename = "<test>"
+        self._line_no = 1
+        
+    def reset(self) -> 'TraceEventBuilder':
+        """Reset the builder state"""
+        self.events = []
+        self._current_event_id = 0
+        return self
+        
+    def set_filename(self, filename: str) -> 'TraceEventBuilder':
+        """Set the default filename for events"""
+        self._filename = filename
+        return self
+        
+    def set_line(self, line_no: int) -> 'TraceEventBuilder':
+        """Set the default line number for events"""
+        self._line_no = line_no
+        return self
+        
+    def _next_event_id(self) -> int:
+        """Get next event ID"""
+        self._current_event_id += 1
+        return self._current_event_id
+        
+    def _create_event(self, event_type: EventType, data: Dict[str, Any], 
+                     line_no: Optional[int] = None) -> TraceEvent:
+        """Create a new trace event"""
+        event = TraceEvent(
+            event_id=self._next_event_id(),
+            filename=self._filename,
+            line_no=line_no or self._line_no,
+            event_type=event_type.value,
+            data=data
+        )
+        self.events.append(event)
+        return event
+        
+    # Variable assignment events
+    def assign(self, var_name: str, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a variable assignment event"""
+        self._create_event(EventType.ASSIGN, {
+            'var_name': var_name,
+            'value': value
+        }, line_no)
+        return self
+        
+    def attr_assign(self, obj_name: str, attr: str, value: Any, 
+                   line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an attribute assignment event"""
+        self._create_event(EventType.ATTR_ASSIGN, {
+            'obj_attr': attr,
+            'obj': obj_name,
+            'value': value
+        }, line_no)
+        return self
+        
+    def subscript_assign(self, container: str, index: Any, value: Any,
+                        line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a subscript assignment event"""
+        self._create_event(EventType.SUBSCRIPT_ASSIGN, {
+            'container': container,
+            'index': index,
+            'value': value
+        }, line_no)
+        return self
+        
+    def aug_assign(self, var_name: str, value: Any, op: str = "+=",
+                  line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an augmented assignment event"""
+        self._create_event(EventType.AUG_ASSIGN, {
+            'var_name': var_name,
+            'value': value,
+            'operation': op
+        }, line_no)
+        return self
+        
+    # Function events
+    def function_entry(self, func_name: str, args: List[Any], 
+                      line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a function entry event"""
+        self._create_event(EventType.FUNCTION_ENTRY, {
+            'func_name': func_name,
+            'args': args
+        }, line_no)
+        return self
+        
+    def return_event(self, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a return event"""
+        self._create_event(EventType.RETURN, {
+            'value': value
+        }, line_no)
+        return self
+        
+    # Control flow events
+    def condition(self, test_expr: str, result: bool,
+                 line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a condition evaluation event"""
+        self._create_event(EventType.CONDITION, {
+            'test': test_expr,
+            'result': result
+        }, line_no)
+        return self
+        
+    def branch(self, branch_type: str, taken: bool = True,
+              line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a branch event"""
+        self._create_event(EventType.BRANCH, {
+            'taken': "if" if taken else "else",
+            'branch_type': branch_type
+        }, line_no)
+        return self
+        
+    def loop_iteration(self, target: str, iter_value: Any,
+                      line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a loop iteration event"""
+        self._create_event(EventType.LOOP_ITERATION, {
+            'target': target,
+            'iter_value': iter_value
+        }, line_no)
+        return self
+        
+    def while_condition(self, test_expr: str, result: bool,
+                       line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a while condition event"""
+        self._create_event(EventType.WHILE_CONDITION, {
+            'test': test_expr,
+            'result': result
+        }, line_no)
+        return self
+        
+    # Utility methods
+    def build(self) -> List[TraceEvent]:
+        """Return the built trace events"""
+        return self.events.copy()
+        
+    def print_events(self) -> None:
+        """Print all events in a readable format"""
+        for event in self.events:
+            print(f"Event #{event.event_id} ({event.event_type}) at {event.filename}:{event.line_no}")
+            for key, value in event.data.items():
+                print(f"  {key}: {value}")
+            print()
+            
+    def to_json(self) -> str:
+        """Convert all events to JSON"""
+        return json.dumps([event.to_dict() for event in self.events], indent=2)
+
+
+# Convenience functions for quick event creation
+def trace() -> TraceEventBuilder:
+    """Create a new trace event builder"""
+    return TraceEventBuilder()
