@@ -9,7 +9,8 @@ import time
 import sys
 
 
-from pywhy.instrumenter import EventType, exec_instrumented
+from pywhy.instrumenter import exec_instrumented
+from pywhy.events import EventType
 from pywhy.trace_dsl import trace
 from pywhy.trace_visualization import (
     format_trace, compare_traces, display_trace_comparison, 

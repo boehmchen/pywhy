@@ -13,7 +13,8 @@ from typing import Dict, Any, List
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pywhy.instrumenter import EventType, TraceEvent, exec_instrumented
+from pywhy.instrumenter import TraceEvent, exec_instrumented
+from pywhy.events import EventType
 from pywhy.trace_analysis import EventMatcher
 from pywhy.trace_dsl import trace, sequence
 from pywhy.tracer import get_tracer

@@ -11,18 +11,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 import pickle
 import json
-from enum import StrEnum
-
-class EventType(StrEnum):
-    """Enumeration of event types for trace events"""
-    ASSIGN = 'assign'
-    CALL_PRE = 'call_pre'
-    CALL_POST = 'call_post'
-    RETURN = 'return'
-    BRANCH = 'branch'
-    CONDITION = 'condition'
-    # EXCEPTION = 'exception'
-    # IMPORT = 'import'
+from .events import EventType
 
 
 @dataclass
@@ -124,7 +113,7 @@ class WhylineTracer:
         """Get history of a variable's assignments"""
         history = []
         for event in self.events:
-            if (event.event_type == 'assign' and 
+            if (event.event_type == EventType.ASSIGN and 
                 var_name in event.locals_snapshot and
                 (filename is None or event.filename == filename)):
                 history.append(event)
@@ -139,7 +128,7 @@ class WhylineTracer:
         """Get all function call events"""
         calls = []
         for event in self.events:
-            if event.event_type in ['call_pre', 'call_post']:
+            if event.event_type in [EventType.FUNCTION_ENTRY, EventType.CALL]:
                 if func_name is None or event.kwargs.get('func_name') == func_name:
                     calls.append(event)
         return calls

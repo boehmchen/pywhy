@@ -3,7 +3,8 @@ Utilities for analyzing and matching trace events.
 Provides tools for filtering, counting, and validating trace event sequences.
 """
 from typing import List
-from .instrumenter import TraceEvent, EventType
+from .instrumenter import TraceEvent
+from .events import EventType
 
 
 class EventMatcher:

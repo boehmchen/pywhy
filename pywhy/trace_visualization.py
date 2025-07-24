@@ -6,7 +6,8 @@ Provides functions to create string representations and diffs of execution trace
 import difflib
 from typing import List, Tuple, Dict, Any, Optional
 from dataclasses import dataclass
-from pywhy.tracer import TraceEvent, EventType
+from pywhy.tracer import TraceEvent
+from pywhy.events import EventType
 from pywhy.trace_dsl import TraceEventBuilder
 
 
@@ -60,7 +61,7 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
         value = data.get('value', '?')
         base_str = f"ASSIGN {var_name} = {repr(value)}"
         
-    elif event_type == EventType.CALL_PRE or event_type == 'function_entry':
+    elif event_type == EventType.FUNCTION_ENTRY or event_type == 'function_entry':
         func_name = data.get('func_name', '?')
         args = data.get('args', [])
         base_str = f"FUNCTION_ENTRY {func_name}({', '.join(map(repr, args))})"
@@ -78,6 +79,42 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
         test = data.get('test', '?')
         result = data.get('result', '?')
         base_str = f"CONDITION {test} -> {result}"
+        
+    elif event_type == EventType.ATTR_ASSIGN or event_type == 'attr_assign':
+        obj_attr = data.get('obj_attr', '?')
+        value = data.get('value', '?')
+        base_str = f"ATTR_ASSIGN {obj_attr} = {repr(value)}"
+        
+    elif event_type == EventType.SUBSCRIPT_ASSIGN or event_type == 'subscript_assign':
+        target = data.get('target', '?')
+        value = data.get('value', '?')
+        base_str = f"SUBSCRIPT_ASSIGN {target} = {repr(value)}"
+        
+    elif event_type == EventType.SLICE_ASSIGN or event_type == 'slice_assign':
+        target = data.get('target', '?')
+        value = data.get('value', '?')
+        base_str = f"SLICE_ASSIGN {target} = {repr(value)}"
+        
+    elif event_type == EventType.AUG_ASSIGN or event_type == 'aug_assign':
+        target = data.get('target', '?')
+        op = data.get('op', '?')
+        value = data.get('value', '?')
+        base_str = f"AUG_ASSIGN {target} {op}= {repr(value)}"
+        
+    elif event_type == EventType.LOOP_ITERATION or event_type == 'loop_iteration':
+        loop_var = data.get('loop_var', '?')
+        value = data.get('value', '?')
+        base_str = f"LOOP_ITERATION {loop_var} = {repr(value)}"
+        
+    elif event_type == EventType.WHILE_CONDITION or event_type == 'while_condition':
+        condition = data.get('condition', '?')
+        result = data.get('result', '?')
+        base_str = f"WHILE_CONDITION {condition} -> {result}"
+        
+    elif event_type == EventType.CALL or event_type == 'call':
+        func_name = data.get('func_name', '?')
+        args = data.get('args', [])
+        base_str = f"CALL {func_name}({', '.join(map(repr, args))})"
         
     else:
         base_str = f"{event_type.upper()} {data}"

@@ -6,7 +6,8 @@ Demonstrates how to create and test tracing events using the DSL.
 import pytest
 from typing import List
 
-from pywhy.instrumenter import EventType, TraceEvent
+from pywhy.instrumenter import TraceEvent
+from pywhy.events import EventType
 from pywhy.trace_dsl import trace
 from pywhy.trace_analysis import EventMatcher
 

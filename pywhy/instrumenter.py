@@ -3,6 +3,7 @@ Fixed AST-based source code instrumenter for Python Whyline.
 This version properly handles AST contexts and node transformation.
 """
 from enum import Enum
+from .events import EventType
 import json
 import ast
 import sys
@@ -519,20 +520,6 @@ def instrument_file(source_file: str, output_file: str = None) -> str:
         return source_code
 
 
-class EventType(Enum):
-    """Types of trace events"""
-    ASSIGN = "assign"
-    ATTR_ASSIGN = "attr_assign"  
-    SUBSCRIPT_ASSIGN = "subscript_assign"
-    SLICE_ASSIGN = "slice_assign"
-    AUG_ASSIGN = "aug_assign"
-    FUNCTION_ENTRY = "function_entry"
-    RETURN = "return"
-    CONDITION = "condition"
-    BRANCH = "branch"
-    LOOP_ITERATION = "loop_iteration"
-    WHILE_CONDITION = "while_condition"
-    CALL = "call"
 
 
 @dataclass
