@@ -7,8 +7,8 @@ import pytest
 from typing import List
 
 from pywhy.instrumenter import (
-    EventType, TraceEvent, TraceEventBuilder, TraceSequence, 
-    EventMatcher, trace, sequence
+    EventType, TraceEvent,
+    EventMatcher, trace
 )
 
 
@@ -355,18 +355,6 @@ class TestTraceEvent:
         assert '"event_type": "assign"' in json_str
         assert '"var_name": "x"' in json_str
 
-
-@pytest.mark.dsl
-def test_convenience_functions():
-    """Test convenience functions."""
-    # Test trace() function
-    builder = trace()
-    assert isinstance(builder, TraceEventBuilder)
-    
-    # Test sequence() function
-    seq = sequence("test")
-    assert isinstance(seq, TraceSequence)
-    assert seq.name == "test"
 
 
 @pytest.mark.dsl

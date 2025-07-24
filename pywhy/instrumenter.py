@@ -2,7 +2,8 @@
 Fixed AST-based source code instrumenter for Python Whyline.
 This version properly handles AST contexts and node transformation.
 """
-
+from enum import Enum
+import json
 import ast
 import sys
 from typing import Dict, Any, Set, List, Optional, Union
@@ -12,7 +13,11 @@ import copy
 
 @dataclass
 class InstrumentationInfo:
-    """Information about an instrumentation point"""
+    """Static metadata about where instrumentation code was inserted during AST transformation.
+    
+    Created at compile/instrumentation time to track what instrumentation points were added.
+    Contains location information but no runtime execution data.
+    """
     event_id: int
     line_no: int
     col_offset: int
@@ -189,22 +194,42 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
                 
             elif isinstance(target, ast.Subscript):
-                # Subscript assignment: arr[index] = value
+                # Subscript assignment: arr[index] = value or arr[start:end] = value
                 
                 container_ref = self.safe_copy_for_expression(target.value)
-                index_ref = self.safe_copy_for_expression(target.slice)
                 value_ref = self.safe_copy_for_expression(node.value)
                 
-                args = [
-                    ast.Constant(value='container'),
-                    container_ref,
-                    ast.Constant(value='index'),
-                    index_ref,
-                    ast.Constant(value='value'),
-                    value_ref
-                ]
+                # Handle different types of subscripts
+                if isinstance(target.slice, ast.Slice):
+                    # Slice assignment: arr[start:end] = value
+                    args = [
+                        ast.Constant(value='container'),
+                        container_ref,
+                        ast.Constant(value='slice_type'),
+                        ast.Constant(value='slice'),
+                        ast.Constant(value='lower'),
+                        target.slice.lower if target.slice.lower else ast.Constant(value=None),
+                        ast.Constant(value='upper'),
+                        target.slice.upper if target.slice.upper else ast.Constant(value=None),
+                        ast.Constant(value='step'),
+                        target.slice.step if target.slice.step else ast.Constant(value=None),
+                        ast.Constant(value='value'),
+                        value_ref
+                    ]
+                    tracer_call = self.create_tracer_call('slice_assign', node, args)
+                else:
+                    # Simple subscript assignment: arr[index] = value
+                    index_ref = self.safe_copy_for_expression(target.slice)
+                    args = [
+                        ast.Constant(value='container'),
+                        container_ref,
+                        ast.Constant(value='index'),
+                        index_ref,
+                        ast.Constant(value='value'),
+                        value_ref
+                    ]
+                    tracer_call = self.create_tracer_call('subscript_assign', node, args)
                 
-                tracer_call = self.create_tracer_call('subscript_assign', node, args)
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
         
         return instrumented_stmts
@@ -495,18 +520,12 @@ def instrument_file(source_file: str, output_file: str = None) -> str:
         return source_code
 
 
-# ===== TRACING DSL =====
-# Domain Specific Language for creating and testing tracing events
-
-from enum import Enum
-import json
-
-
 class EventType(Enum):
     """Types of trace events"""
     ASSIGN = "assign"
     ATTR_ASSIGN = "attr_assign"  
     SUBSCRIPT_ASSIGN = "subscript_assign"
+    SLICE_ASSIGN = "slice_assign"
     AUG_ASSIGN = "aug_assign"
     FUNCTION_ENTRY = "function_entry"
     RETURN = "return"
@@ -519,7 +538,11 @@ class EventType(Enum):
 
 @dataclass
 class TraceEvent:
-    """Represents a single trace event"""
+    """Runtime data captured when instrumented code executes.
+    
+    Created at runtime when instrumented code runs to store actual execution traces
+    with variable values, function arguments, and other dynamic execution data.
+    """
     event_id: int
     filename: str
     line_no: int
@@ -695,67 +718,10 @@ class TraceEventBuilder:
         return json.dumps([event.to_dict() for event in self.events], indent=2)
 
 
-class TraceSequence:
-    """Helper for building sequences of related trace events"""
-    
-    def __init__(self, name: str = "test_sequence"):
-        self.name = name
-        self.builder = TraceEventBuilder()
-        
-    def simple_assignment(self, var: str, value: Any) -> 'TraceSequence':
-        """Add a simple variable assignment"""
-        self.builder.assign(var, value)
-        return self
-        
-    def function_call(self, func_name: str, args: List[Any], 
-                     return_value: Any = None) -> 'TraceSequence':
-        """Add function entry and return events"""
-        self.builder.function_entry(func_name, args)
-        if return_value is not None:
-            self.builder.return_event(return_value)
-        return self
-        
-    def if_statement(self, condition: str, condition_result: bool,
-                    then_assignments: List[tuple] = None,
-                    else_assignments: List[tuple] = None) -> 'TraceSequence':
-        """Add if statement with condition and branch events"""
-        self.builder.condition(condition, condition_result)
-        
-        if condition_result and then_assignments:
-            self.builder.branch("if", True)
-            for var, value in then_assignments:
-                self.builder.assign(var, value)
-        elif not condition_result and else_assignments:
-            self.builder.branch("else", False)  
-            for var, value in else_assignments:
-                self.builder.assign(var, value)
-                
-        return self
-        
-    def for_loop(self, target: str, values: List[Any],
-                body_assignments: List[tuple] = None) -> 'TraceSequence':
-        """Add for loop with iterations"""
-        for value in values:
-            self.builder.loop_iteration(target, value)
-            if body_assignments:
-                for var, val in body_assignments:
-                    self.builder.assign(var, val)
-        return self
-        
-    def build(self) -> List[TraceEvent]:
-        """Build the trace sequence"""
-        return self.builder.build()
-
-
 # Convenience functions for quick event creation
 def trace() -> TraceEventBuilder:
     """Create a new trace event builder"""
     return TraceEventBuilder()
-
-def sequence(name: str = "test") -> TraceSequence:
-    """Create a new trace sequence"""
-    return TraceSequence(name)
-
 
 # Test utilities
 class EventMatcher:
@@ -802,44 +768,3 @@ class EventMatcher:
             event.event_type == expected.value 
             for event, expected in zip(events, expected_types)
         )
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    print("=== DSL Example Usage ===\n")
-    
-    # Simple trace building
-    events = (trace()
-              .set_filename("example.py")
-              .assign("x", 5, line_no=1)
-              .assign("y", 10, line_no=2)
-              .function_entry("add", [5, 10], line_no=4)
-              .return_event(15, line_no=5)
-              .build())
-    
-    print("Simple trace events:")
-    for event in events:
-        print(f"  {event.event_type}: {event.data}")
-    
-    print("\n" + "="*50 + "\n")
-    
-    # Using sequence builder
-    seq_events = (sequence("factorial_example")
-                  .function_call("factorial", [5], 120)
-                  .if_statement("n <= 1", False)
-                  .simple_assignment("result", 120)
-                  .build())
-    
-    print("Sequence events:")
-    for event in seq_events:
-        print(f"  {event.event_type}: {event.data}")
-    
-    print("\n" + "="*50 + "\n")
-    
-    # Event matching examples
-    assign_count = EventMatcher.count_event_type(events, EventType.ASSIGN)
-    print(f"Number of assignment events: {assign_count}")
-    
-    function_events = EventMatcher.find_events(events, event_type=EventType.FUNCTION_ENTRY.value)
-    print(f"Function entry events: {len(function_events)}")
-
