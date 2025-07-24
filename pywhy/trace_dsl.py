@@ -161,6 +161,60 @@ class TraceEventBuilder:
         return json.dumps([event.to_dict() for event in self.events], indent=2)
 
 
+class TraceSequence:
+    """Higher-level builder for creating common trace patterns"""
+    
+    def __init__(self):
+        self.builder = TraceEventBuilder()
+    
+    def simple_assignment(self, var_name: str, value: Any) -> 'TraceSequence':
+        """Create a simple assignment"""
+        self.builder.assign(var_name, value)
+        return self
+    
+    def function_call(self, func_name: str, args: List[Any], return_value: Any) -> 'TraceSequence':
+        """Create a function call with entry and return"""
+        self.builder.function_entry(func_name, args)
+        self.builder.return_event(return_value)
+        return self
+    
+    def if_statement(self, condition: str, result: bool, 
+                    then_assignments: Optional[List[tuple]] = None,
+                    else_assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
+        """Create an if statement with condition, branch, and assignments"""
+        self.builder.condition(condition, result)
+        self.builder.branch("if" if result else "else", result)
+        
+        if result and then_assignments:
+            for var_name, value in then_assignments:
+                self.builder.assign(var_name, value)
+        elif not result and else_assignments:
+            for var_name, value in else_assignments:
+                self.builder.assign(var_name, value)
+        
+        return self
+    
+    def for_loop(self, target: str, values: List[Any], 
+                assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
+        """Create a for loop with iterations"""
+        for value in values:
+            self.builder.loop_iteration(target, value)
+            if assignments:
+                for var_name, _ in assignments:
+                    # For demo purposes, just mark as updated
+                    self.builder.assign(var_name, "updated")
+        return self
+    
+    def build(self) -> List[TraceEvent]:
+        """Build and return the events"""
+        return self.builder.build()
+
+
+def sequence(name: str = "") -> TraceSequence:
+    """Create a new trace sequence builder"""
+    return TraceSequence()
+
+
 # Convenience functions for quick event creation
 def trace() -> TraceEventBuilder:
     """Create a new trace event builder"""

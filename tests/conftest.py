@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pywhy.instrumenter import EventType, TraceEvent, exec_instrumented
 from pywhy.trace_analysis import EventMatcher
-from pywhy.trace_dsl import trace
+from pywhy.trace_dsl import trace, sequence
 from pywhy.tracer import get_tracer
 from pywhy.questions import QuestionAsker
 
@@ -139,6 +139,10 @@ def trace_builder():
     return trace()
 
 
+@pytest.fixture
+def trace_sequence():
+    """Provide a fresh trace sequence instance."""
+    return sequence()
 
 
 @pytest.fixture
