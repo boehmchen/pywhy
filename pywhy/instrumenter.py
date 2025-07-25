@@ -348,47 +348,63 @@ class WhylineInstrumenter(ast.NodeTransformer):
         return node 
     
     ### Control Flow ###
-    def visit_If(self, node: ast.If) -> ast.If:
+    def visit_If(self, node: ast.If) -> List[ast.stmt]:
         """Instrument if statements"""
         # Transform children first
         self.generic_visit(node)
         
-        # Add condition tracing
+        # Create statements to return
+        instrumented_stmts = []
+        
+        # Add condition tracing BEFORE the if statement
         condition_copy = self.safe_copy_for_expression(node.test)
         
+        # Get condition as string for debugging
+        condition_str = ast.unparse(node.test) if hasattr(ast, 'unparse') else str(node.test)
+        
         condition_args = [
-            ast.Constant(value='test'),
+            ast.Constant(value='condition'),
+            ast.Constant(value=condition_str),
+            ast.Constant(value='result'),
             condition_copy
         ]
-        
         condition_tracer = self.create_tracer_call(EventType.CONDITION, node, condition_args)
-        node.body.insert(0, ast.Expr(value=condition_tracer))
+        instrumented_stmts.append(ast.Expr(value=condition_tracer))
         
-        # Add branch tracing to if body
+        # Add branch tracing to if body (at the beginning)
         if_args = [
             ast.Constant(value='taken'),
             ast.Constant(value='if')
         ]
-        
         if_tracer = self.create_tracer_call(EventType.BRANCH, node, if_args)
         node.body.insert(0, ast.Expr(value=if_tracer))
         
-        # Add branch tracing to else body
+        # Add branch tracing to else body (including implicit else)
         if node.orelse:
             if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
                 # elif case - will be handled by recursive visit
                 pass
             else:
-                # else case
+                # explicit else case
                 else_args = [
                     ast.Constant(value='taken'),
                     ast.Constant(value='else')
                 ]
-                
                 else_tracer = self.create_tracer_call(EventType.BRANCH, node, else_args)
                 node.orelse.insert(0, ast.Expr(value=else_tracer))
+        else:
+            # implicit else case - create an empty else with just the branch tracer
+            else_args = [
+                ast.Constant(value='taken'),
+                ast.Constant(value='else')
+            ]
+            else_tracer = self.create_tracer_call(EventType.BRANCH, node, else_args)
+            node.orelse = [ast.Expr(value=else_tracer)]
         
-        return node
+        # Add the instrumented if statement
+        instrumented_stmts.append(node)
+        
+        return instrumented_stmts
     
     ### Loop Instrumentation ###
     def visit_For(self, node: ast.For) -> ast.For:
@@ -423,8 +439,13 @@ class WhylineInstrumenter(ast.NodeTransformer):
         # Copy the test condition
         test_copy = self.safe_copy_for_expression(node.test)
         
+        # Get condition as string for debugging
+        condition_str = ast.unparse(node.test) if hasattr(ast, 'unparse') else str(node.test)
+        
         args = [
-            ast.Constant(value='test'),
+            ast.Constant(value='condition'),
+            ast.Constant(value=condition_str),
+            ast.Constant(value='result'),
             test_copy
         ]
         

@@ -144,10 +144,11 @@ class TraceEventBuilder:
         return self
         
     # Control flow events
-    def condition(self, test_expr: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def condition(self, condition: str, result: bool, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a condition evaluation event"""
         self._create_event(EventType.CONDITION, {
-            'test': test_expr
+            'condition': condition,
+            'result': result
         }, line_no)
         return self
         
@@ -167,10 +168,11 @@ class TraceEventBuilder:
         }, line_no)
         return self
         
-    def while_condition(self, test_expr: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def while_condition(self, condition: str, result: bool, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a while condition event"""
         self._create_event(EventType.WHILE_CONDITION, {
-            'test': test_expr
+            'condition': condition,
+            'result': result
         }, line_no)
         return self
         
@@ -213,7 +215,7 @@ class TraceSequence:
                     then_assignments: Optional[List[tuple]] = None,
                     else_assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
         """Create an if statement with condition, branch, and assignments"""
-        self.builder.condition(condition)
+        self.builder.condition(condition, result)
         self.builder.branch("if" if result else "else")
         
         if result and then_assignments:
@@ -240,12 +242,12 @@ class TraceSequence:
                   assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
         """Create a while loop with condition checks"""
         for i in range(iterations):
-            self.builder.while_condition(condition)
+            self.builder.while_condition(condition, True)
             if assignments:
                 for var_name, value in assignments:
                     self.builder.assign(var_name, value)
         # Final condition check that ends the loop
-        self.builder.while_condition(condition)
+        self.builder.while_condition(condition, False)
         return self
     
     def object_operations(self, obj_name: str) -> 'TraceSequence':
