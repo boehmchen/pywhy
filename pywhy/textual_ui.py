@@ -126,7 +126,7 @@ class TraceEventWidget(Static):
     def render(self) -> Table:
         """Render trace events as a table"""
         table = Table(
-            "ID", "Type", "Line", "File", "Args", "Locals",
+            "ID", "Type", "Line", "File", "Data", "Locals",
             title="Trace Events",
             show_header=True,
             header_style="bold magenta",
@@ -134,10 +134,11 @@ class TraceEventWidget(Static):
         )
         
         for event in self.events[-20:]:  # Show last 20 events
-            # Format args
-            args_str = ", ".join(str(arg) for arg in event.args[:3])
-            if len(event.args) > 3:
-                args_str += "..."
+            # Format data
+            data_items = list(event.data.items())[:3]
+            data_str = ", ".join(f"{k}={v}" for k, v in data_items)
+            if len(event.data) > 3:
+                data_str += "..."
             
             # Format locals (show just a few key variables)
             locals_items = list(event.locals_snapshot.items())[:2]
@@ -159,7 +160,7 @@ class TraceEventWidget(Static):
                 f"[{event_type_style}]{event.event_type}[/{event_type_style}]",
                 str(event.lineno),
                 Path(event.filename).name,
-                args_str,
+                data_str,
                 locals_str
             )
         
@@ -893,9 +894,9 @@ class WhylineApp(App):
         # Find interesting variables
         variables = {}
         for event in self.tracer.events:
-            if event.event_type in ['assign', 'aug_assign'] and event.args and len(event.args) >= 4:
-                var_name = event.args[1]
-                value = event.args[3]
+            if event.event_type in ['assign', 'aug_assign'] and event.data.get('var_name'):
+                var_name = event.data.get('var_name')
+                value = event.data.get('value')
                 variables[var_name] = value
         
         # Suggest variable questions
@@ -914,8 +915,8 @@ class WhylineApp(App):
         # Find function calls
         functions = set()
         for event in self.tracer.events:
-            if event.event_type == 'function_entry' and event.args:
-                func_name = event.args[1]
+            if event.event_type == 'function_entry' and event.data.get('func_name'):
+                func_name = event.data.get('func_name')
                 functions.add(func_name)
         
         # Suggest function questions

@@ -32,7 +32,7 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
         Formatted string representation of the event
     """
     event_type = getattr(event, 'event_type', 'unknown')
-    print(f"Formatting event: {event_type} with data: {event.data}") 
+    #print(f"Formatting event: {event_type} with data: {event.data}") 
     
     data = event.data
     line_no = getattr(event, 'line_no', 0)
@@ -127,11 +127,14 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
         case _:
             base_str = f"{event_type.upper()} {data}"
     
+    # Add all data information  
+    data_info = f" | data: {dict(data)}" if data else ""
+    
     if include_details:
         event_id = getattr(event, 'event_id', '?')
-        return f"[{event_id:3}] {filename}:{line_no:3} | {base_str}"
+        return f"[{event_id:3}] {filename}:{line_no:3} | {base_str}{data_info}"
     else:
-        return base_str
+        return f"{base_str}{data_info}"
 
 
 def format_trace(events: List[TraceEvent], title: str = "Trace", include_details: bool = True) -> str:

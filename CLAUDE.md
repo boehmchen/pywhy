@@ -4,7 +4,7 @@
 
 ### Event Data Format
 - **Always use data dictionary format**: `event.data = {'var_name': 'x', 'value': 10}`
-- **Never use legacy args tuple format**: ~~`event.args = ('var_name', 'x', 'value', 10)`~~
+- **Never use legacy args tuple format**: Legacy format has been removed
 - **Always use EventType enum**: `event.event_type == EventType.ASSIGN`
 - **Never use string comparisons**: ~~`event.event_type == "assign"`~~
 

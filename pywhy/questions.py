@@ -89,8 +89,7 @@ class WhyDidVariableHaveValue(Question):
         
         for event in self.tracer.events:
             if (event.event_type in ['assign', 'aug_assign'] and 
-                event.args and len(event.args) >= 4 and
-                event.args[0] == 'var_name' and event.args[1] == self.var_name):
+                event.data.get('var_name') == self.var_name):
                 
                 # Check if this is the right file and line
                 # Handle filename mismatch between CLI and tracer
@@ -104,9 +103,8 @@ class WhyDidVariableHaveValue(Question):
                 # Check if the value matches (check both args and locals)
                 value_matches = False
                 
-                # Check the value from the args (more reliable)
-                if len(event.args) >= 4 and event.args[2] == 'value':
-                    if event.args[3] == self.value:
+                # Check the value from the data
+                if event.data.get('value') == self.value:
                         value_matches = True
                 
                 # Also check locals as backup
@@ -146,12 +144,10 @@ class WhyDidFunctionReturn(Question):
         return_events = []
         
         for event in self.tracer.events:
-            if (event.event_type == 'return' and 
-                event.args and len(event.args) >= 2 and
-                event.args[0] == 'value'):
+            if event.event_type == 'return':
                 
                 # Check if this return matches our expected function and value
-                if event.args[1] == self.return_value:
+                if event.data.get('value') == self.return_value:
                     return_events.append(event)
         
         if not return_events:
@@ -216,9 +212,7 @@ class WhyWasFunctionCalled(Question):
         
         for event in self.tracer.events:
             if (event.event_type == 'call_pre' and 
-                event.args and len(event.args) >= 2 and
-                event.args[0] == 'func_name' and 
-                event.args[1] == self.func_name):
+                event.data.get('func_name') == self.func_name):
                 call_events.append(event)
         
         if not call_events:
@@ -283,9 +277,7 @@ class WhyDidntFieldChange(Question):
             if event.timestamp > self.after_time:
                 # Check for actual assignments
                 if (event.event_type == 'assign' and 
-                    event.args and len(event.args) >= 2 and
-                    event.args[0] == 'var_name' and 
-                    event.args[1] == self.field_name):
+                    event.data.get('var_name') == self.field_name):
                     field_assignments.append(event)
                 
                 # Check for potential assignment sites (lines that could assign to this field)
@@ -414,11 +406,8 @@ class WhyDidPropertyGetAssigned(Question):
         for event in self.tracer.events:
             if event.event_type == 'assign':
                 # Check if this looks like a property assignment
-                if (event.args and len(event.args) >= 4 and
-                    event.args[0] == 'var_name' and 
-                    event.args[1] == self.property_name and
-                    event.args[2] == 'value' and
-                    event.args[3] == self.value):
+                if (event.data.get('var_name') == self.property_name and
+                    event.data.get('value') == self.value):
                     assignments.append(event)
                 
                 # Also check locals for the property
@@ -462,7 +451,7 @@ class WhyDidPropertyGetAssigned(Question):
                 event.event_type in ['assign', 'call_post', 'return']):
                 
                 # Check if any value in this event matches our target value
-                if event.args and self.value in event.args:
+                if self.value in event.data.values():
                     dependencies.append(event)
                 elif self.value in event.locals_snapshot.values():
                     dependencies.append(event)

@@ -117,21 +117,6 @@ class TraceEvent:
             globals_snapshot=data.get('globals_snapshot', {})
         )
     
-    # Backward compatibility properties for old args/kwargs pattern
-    @property
-    def args(self) -> tuple:
-        """Backward compatibility: extract args from data dict"""
-        args_list = []
-        i = 0
-        while f'arg_{i}' in self.data:
-            args_list.append(self.data[f'arg_{i}'])
-            i += 1
-        return tuple(args_list) if args_list else tuple(self.data.get('args', []))
-    
-    @property  
-    def kwargs(self) -> Dict[str, Any]:
-        """Backward compatibility: extract kwargs from data dict"""
-        return self.data.get('kwargs', {})
     
     # Convenience methods for common data patterns
     def get_var_name(self) -> Optional[str]:

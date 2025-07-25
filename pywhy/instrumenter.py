@@ -362,6 +362,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         ]
         
         condition_tracer = self.create_tracer_call(EventType.CONDITION, node, condition_args)
+        node.body.insert(0, ast.Expr(value=condition_tracer))
         
         # Add branch tracing to if body
         if_args = [

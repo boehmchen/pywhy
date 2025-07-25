@@ -259,8 +259,8 @@ Type 'help <command>' for detailed help on a command.
                 print(f"\nEvidence ({len(answer.evidence)} events):")
                 for i, event in enumerate(answer.evidence[:5]):  # Show first 5
                     print(f"  {i+1}. Line {event.lineno}: {event.event_type}")
-                    if hasattr(event, 'args') and event.args:
-                        print(f"      Args: {event.args}")
+                    if event.data:
+                        print(f"      Data: {event.data}")
                 
                 if len(answer.evidence) > 5:
                     print(f"  ... and {len(answer.evidence) - 5} more events")
@@ -320,8 +320,8 @@ Type 'help <command>' for detailed help on a command.
         
         for event in events:
             print(f"  {event.event_id}: Line {event.lineno} - {event.event_type}")
-            if hasattr(event, 'args') and event.args:
-                print(f"    Args: {event.args}")
+            if event.data:
+                print(f"    Data: {event.data}")
     
     def do_clear(self, line: str):
         """Clear current trace"""
