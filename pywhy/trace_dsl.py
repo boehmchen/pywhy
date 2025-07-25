@@ -79,23 +79,40 @@ class TraceEventBuilder:
         }, line_no)
         return self
         
-    def aug_assign(self, var_name: str, value: Any, op: str = "+=",
-                  line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create an augmented assignment event"""
+    def aug_assign(self, var_name: str, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an augmented assignment event for variables"""
         self._create_event(EventType.AUG_ASSIGN, {
             'var_name': var_name,
-            'value': value,
-            'operation': op
+            'value': value
         }, line_no)
         return self
         
-    def slice_assign(self, container: str, start: Optional[int], end: Optional[int], 
+    def aug_assign_attr(self, obj_attr: str, obj: Any, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an augmented assignment event for attributes"""
+        self._create_event(EventType.AUG_ASSIGN, {
+            'obj_attr': obj_attr,
+            'obj': obj,
+            'value': value
+        }, line_no)
+        return self
+        
+    def aug_assign_subscript(self, container: Any, index: Any, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create an augmented assignment event for subscripts"""
+        self._create_event(EventType.AUG_ASSIGN, {
+            'container': container,
+            'index': index,
+            'value': value
+        }, line_no)
+        return self
+        
+    def slice_assign(self, container: str, lower: Optional[int], upper: Optional[int], 
                     step: Optional[int], value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a slice assignment event (e.g., arr[1:3] = values)"""
         self._create_event(EventType.SLICE_ASSIGN, {
             'container': container,
-            'start': start,
-            'end': end,
+            'slice_type': 'slice',
+            'lower': lower,
+            'upper': upper,
             'step': step,
             'value': value
         }, line_no)
@@ -127,21 +144,17 @@ class TraceEventBuilder:
         return self
         
     # Control flow events
-    def condition(self, test_expr: str, result: bool,
-                 line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def condition(self, test_expr: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a condition evaluation event"""
         self._create_event(EventType.CONDITION, {
-            'test': test_expr,
-            'result': result
+            'test': test_expr
         }, line_no)
         return self
         
-    def branch(self, branch_type: str, taken: bool = True,
-              line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def branch(self, taken: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a branch event"""
         self._create_event(EventType.BRANCH, {
-            'taken': "if" if taken else "else",
-            'branch_type': branch_type
+            'taken': taken  # Should be "if" or "else"
         }, line_no)
         return self
         
@@ -154,12 +167,10 @@ class TraceEventBuilder:
         }, line_no)
         return self
         
-    def while_condition(self, test_expr: str, result: bool,
-                       line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def while_condition(self, test_expr: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a while condition event"""
         self._create_event(EventType.WHILE_CONDITION, {
-            'test': test_expr,
-            'result': result
+            'test': test_expr
         }, line_no)
         return self
         
@@ -171,7 +182,7 @@ class TraceEventBuilder:
     def print_events(self) -> None:
         """Print all events in a readable format"""
         for event in self.events:
-            print(f"Event #{event.event_id} ({event.event_type}) at {event.filename}:{event.line_no}")
+            print(f"Event #{event.event_id} ({event.event_type}) at {event.filename}:{event.lineno}")
             for key, value in event.data.items():
                 print(f"  {key}: {value}")
             print()
@@ -202,8 +213,8 @@ class TraceSequence:
                     then_assignments: Optional[List[tuple]] = None,
                     else_assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
         """Create an if statement with condition, branch, and assignments"""
-        self.builder.condition(condition, result)
-        self.builder.branch("if" if result else "else", result)
+        self.builder.condition(condition)
+        self.builder.branch("if" if result else "else")
         
         if result and then_assignments:
             for var_name, value in then_assignments:
@@ -229,12 +240,12 @@ class TraceSequence:
                   assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
         """Create a while loop with condition checks"""
         for i in range(iterations):
-            self.builder.while_condition(condition, True)
+            self.builder.while_condition(condition)
             if assignments:
                 for var_name, value in assignments:
                     self.builder.assign(var_name, value)
         # Final condition check that ends the loop
-        self.builder.while_condition(condition, False)
+        self.builder.while_condition(condition)
         return self
     
     def object_operations(self, obj_name: str) -> 'TraceSequence':
@@ -258,10 +269,10 @@ class TraceSequence:
         self.builder.assign(var_name, 100)
         
         # Augmented assignments
-        self.builder.aug_assign(var_name, 10, "+=")
-        self.builder.aug_assign(var_name, 2, "*=")
-        self.builder.aug_assign(var_name, 5, "-=")
-        self.builder.aug_assign(var_name, 3, "//=")
+        self.builder.aug_assign(var_name, 110)  # After += 10
+        self.builder.aug_assign(var_name, 220)  # After *= 2
+        self.builder.aug_assign(var_name, 215)  # After -= 5
+        self.builder.aug_assign(var_name, 71)   # After //= 3
         
         return self
     
