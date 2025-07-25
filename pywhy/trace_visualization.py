@@ -79,14 +79,10 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
             base_str = f"RETURN {repr(value)}"
         
         case EventType.BRANCH:
-            branch_type = data.get('branch_type', data.get('type', '?'))
-            taken = data.get('taken', data.get('result', '?'))
-            base_str = f"BRANCH {branch_type} -> {taken}"
+            condition = data.get('condition', '?')
+            decision = data.get('decision', data.get('taken', '?'))  # Support both for compatibility
+            base_str = f"BRANCH {condition} -> {decision}"
         
-        case EventType.CONDITION:
-            test = data.get('test', '?')
-            result = data.get('result', '?')
-            base_str = f"CONDITION {test} -> {result}"
         
         case EventType.ATTR_ASSIGN:
             obj_attr = data.get('obj_attr', '?')
@@ -115,9 +111,8 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
             base_str = f"LOOP_ITERATION {loop_var} = {repr(value)}"
         
         case EventType.WHILE_CONDITION:
-            condition = data.get('condition', '?')
-            result = data.get('result', '?')
-            base_str = f"WHILE_CONDITION {condition} -> {result}"
+            condition = data.get('condition', data.get('test', '?'))
+            base_str = f"WHILE_CONDITION {condition}"
             
         case EventType.CALL:
             func_name = data.get('func_name', '?')

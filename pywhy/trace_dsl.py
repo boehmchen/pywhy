@@ -144,18 +144,13 @@ class TraceEventBuilder:
         return self
         
     # Control flow events
-    def condition(self, condition: str, result: bool, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a condition evaluation event"""
-        self._create_event(EventType.CONDITION, {
-            'condition': condition,
-            'result': result
-        }, line_no)
-        return self
         
-    def branch(self, taken: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a branch event"""
+    def branch(self, condition: str, result: bool, decision: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a branch event with integrated condition"""
         self._create_event(EventType.BRANCH, {
-            'taken': taken  # Should be "if" or "else"
+            'condition': condition,
+            'result': result,
+            'decision': decision  # Should be "if_block", "else_block", "elif_block", or "skip_block"
         }, line_no)
         return self
         
@@ -214,16 +209,23 @@ class TraceSequence:
     def if_statement(self, condition: str, result: bool, 
                     then_assignments: Optional[List[tuple]] = None,
                     else_assignments: Optional[List[tuple]] = None) -> 'TraceSequence':
-        """Create an if statement with condition, branch, and assignments"""
-        self.builder.condition(condition, result)
-        self.builder.branch("if" if result else "else")
-        
-        if result and then_assignments:
-            for var_name, value in then_assignments:
-                self.builder.assign(var_name, value)
-        elif not result and else_assignments:
-            for var_name, value in else_assignments:
-                self.builder.assign(var_name, value)
+        """Create an if statement with integrated condition and branch"""
+        if result:
+            # Condition is true, if block taken
+            self.builder.branch(condition, result, "if_block")
+            if then_assignments:
+                for var_name, value in then_assignments:
+                    self.builder.assign(var_name, value)
+        else:
+            # Condition is false
+            if else_assignments:
+                # Else block exists and taken
+                self.builder.branch(condition, result, "else_block")
+                for var_name, value in else_assignments:
+                    self.builder.assign(var_name, value)
+            else:
+                # No else block, skip
+                self.builder.branch(condition, result, "skip_block")
         
         return self
     

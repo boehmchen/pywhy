@@ -20,7 +20,6 @@ class EventType(StrEnum):
     AUG_ASSIGN = "aug_assign"
     FUNCTION_ENTRY = "function_entry"
     RETURN = "return"
-    CONDITION = "condition"
     BRANCH = "branch"
     LOOP_ITERATION = "loop_iteration"
     WHILE_CONDITION = "while_condition"
@@ -137,4 +136,4 @@ class TraceEvent:
     
     def get_result(self) -> Any:
         """Get result for condition/branch events"""
-        return self.data.get('result') or self.data.get('taken')
+        return self.data.get('result') or self.data.get('decision') or self.data.get('taken')

@@ -44,30 +44,29 @@ class TestTraceEventBuilder:
         assert events[1].data["value"] == 120
 
     @pytest.mark.parametrize(
-        "condition,result", [("x > 0", True), ("y < 10", False), ("z == 0", True)]
+        "condition,result,decision", [("x > 0", True, "if_block"), ("y < 10", False, "skip_block"), ("z == 0", True, "else_block")]
     )
-    def test_condition_events_parametrized(self, trace_builder, condition, result):
-        """Test creating condition events with different parameters."""
-        events = trace_builder.condition(condition, result).build()
+    def test_branch_events_parametrized(self, trace_builder, condition, result, decision):
+        """Test creating branch events with integrated condition."""
+        events = trace_builder.branch(condition, result, decision).build()
 
         assert len(events) == 1
-        assert events[0].event_type == EventType.CONDITION.value
-        assert events[0].data["test"] == condition
+        assert events[0].event_type == EventType.BRANCH.value
+        assert events[0].data["condition"] == condition
         assert events[0].data["result"] == result
+        assert events[0].data["decision"] == decision
 
     def test_control_flow_events_creation(self, trace_builder):
         """Test creating control flow events."""
         events = (
-            trace_builder.condition("x > 0", True)
-            .branch("if", True)
+            trace_builder.branch("x > 0", True, "if_block")
             .loop_iteration("i", 1)
             .while_condition("i < 10", True)
             .build()
         )
 
-        assert len(events) == 4
+        assert len(events) == 3
         expected_types = [
-            EventType.CONDITION,
             EventType.BRANCH,
             EventType.LOOP_ITERATION,
             EventType.WHILE_CONDITION,
@@ -81,7 +80,7 @@ class TestTraceEventBuilder:
         events = (
             trace_builder.attr_assign("obj", "value", 42)
             .subscript_assign("arr", 0, "hello")
-            .aug_assign("counter", 1, "+=")
+            .aug_assign("counter", 1)
             .build()
         )
 
@@ -102,7 +101,6 @@ class TestTraceEventBuilder:
         assert events[2].event_type == EventType.AUG_ASSIGN.value
         assert events[2].data["var_name"] == "counter"
         assert events[2].data["value"] == 1
-        assert events[2].data["operation"] == "+="
 
     def test_filename_and_line_numbers(self, trace_builder):
         """Test setting filename and line numbers."""
@@ -188,19 +186,17 @@ class TestTraceSequence:
             condition, result, then_assignments, else_assignments
         ).build()
 
-        # Should have condition + branch + assignments
-        expected_count = 2  # condition + branch
+        # Should have branch + assignments
+        expected_count = 1  # branch with integrated condition
         if then_assignments and result:
             expected_count += len(then_assignments)
         elif else_assignments and not result:
             expected_count += len(else_assignments)
 
         assert len(events) == expected_count
-        assert events[0].event_type == EventType.CONDITION.value
-        assert events[0].data["test"] == condition
+        assert events[0].event_type == EventType.BRANCH.value
+        assert events[0].data["condition"] == condition
         assert events[0].data["result"] == result
-
-        assert events[1].event_type == EventType.BRANCH.value
 
     def test_for_loop_sequence(self, trace_sequence):
         """Test for loop sequence."""
@@ -238,7 +234,6 @@ class TestTraceSequence:
             EventType.ASSIGN.value,
             EventType.FUNCTION_ENTRY.value,
             EventType.RETURN.value,
-            EventType.CONDITION.value,
             EventType.BRANCH.value,
             EventType.LOOP_ITERATION.value,
         }
@@ -258,7 +253,7 @@ class TestEventMatcher:
             .assign("y", 10)
             .function_entry("test", [])
             .return_event(None)
-            .condition("x > 0", True)
+            .branch("x > 0", True, "if_block")
             .build()
         )
 
@@ -274,7 +269,7 @@ class TestEventMatcher:
             (EventType.ASSIGN, 2),
             (EventType.FUNCTION_ENTRY, 1),
             (EventType.RETURN, 1),
-            (EventType.CONDITION, 1),
+            (EventType.BRANCH, 1),
             (EventType.LOOP_ITERATION, 0),
         ],
     )
@@ -313,7 +308,7 @@ class TestEventMatcher:
             EventType.ASSIGN,
             EventType.FUNCTION_ENTRY,
             EventType.RETURN,
-            EventType.CONDITION,
+            EventType.BRANCH,
         ]
 
         assert EventMatcher.assert_sequence(sample_events, expected)
@@ -376,8 +371,7 @@ def test_full_workflow_example():
         trace()
         .set_filename("factorial.py")
         .function_entry("factorial", [5], line_no=1)
-        .condition("n <= 1", False, line_no=2)
-        .branch("else", False, line_no=4)
+        .branch("n <= 1", False, "else_block", line_no=2)
         .assign("result", 120, line_no=5)
         .return_event(120, line_no=6)
         .build()
@@ -386,7 +380,6 @@ def test_full_workflow_example():
     # Verify the sequence
     expected_types = [
         EventType.FUNCTION_ENTRY,
-        EventType.CONDITION,
         EventType.BRANCH,
         EventType.ASSIGN,
         EventType.RETURN,

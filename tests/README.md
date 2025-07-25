@@ -122,12 +122,12 @@ pytest --cov=pywhy
 ### 🎯 **Parametrized Testing**
 Tests use `@pytest.mark.parametrize` for comprehensive coverage:
 ```python
-@pytest.mark.parametrize("condition,result", [
-    ("x > 0", True),
-    ("y < 10", False),
-    ("z == 0", True)
+@pytest.mark.parametrize("condition,result,decision", [
+    ("x > 0", True, "if_block"),
+    ("y < 10", False, "skip_block"),
+    ("z == 0", True, "else_block")
 ])
-def test_condition_events_parametrized(self, trace_builder, condition, result):
+def test_branch_events_parametrized(self, trace_builder, condition, result, decision):
     # Test with multiple parameter combinations
 ```
 
