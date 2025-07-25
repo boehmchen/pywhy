@@ -2,15 +2,14 @@
 Fixed AST-based source code instrumenter for Python Whyline.
 This version properly handles AST contexts and node transformation.
 """
-from enum import Enum
-from .events import EventType
-import json
+from .events import EventType, TraceEvent
 import ast
 import sys
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 import copy
-
+from .tracer import get_tracer
+import builtins
 
 @dataclass
 class InstrumentationInfo:
@@ -20,7 +19,7 @@ class InstrumentationInfo:
     Contains location information but no runtime execution data.
     """
     event_id: int
-    line_no: int
+    lineno: int
     col_offset: int
     filename: str
     event_type: str
@@ -77,7 +76,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         self.event_id += 1
         return self.event_id
     
-    def create_tracer_call(self, event_type: str, node: ast.AST, 
+    def create_tracer_call(self, event_type: EventType, node: ast.AST, 
                           extra_args: List[ast.expr] = None) -> ast.Call:
         """Create a call to the tracer's record_event method"""
         event_id = self.get_next_event_id()
@@ -85,7 +84,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         # Record instrumentation point
         self.instrumentation_points.append(InstrumentationInfo(
             event_id=event_id,
-            line_no=getattr(node, 'lineno', 0),
+            lineno=getattr(node, 'lineno', 0),
             col_offset=getattr(node, 'col_offset', 0),
             filename=self.filename,
             event_type=event_type
@@ -119,6 +118,8 @@ class WhylineInstrumenter(ast.NodeTransformer):
         fixed = self.context_fixer.visit(copied)
         return fixed
     
+
+    # === AST Node Visitors ===
     def visit_Module(self, node: ast.Module) -> ast.Module:
         """Add tracer import to the module"""
         self.generic_visit(node)
@@ -173,7 +174,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     ast.Name(id=target.id, ctx=ast.Load())  # Fresh node with Load context
                 ]
                 
-                tracer_call = self.create_tracer_call('assign', node, args)
+                tracer_call = self.create_tracer_call(EventType.ASSIGN, node, args)
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
                 
             elif isinstance(target, ast.Attribute):
@@ -191,7 +192,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     self.safe_copy_for_expression(node.value)
                 ]
                 
-                tracer_call = self.create_tracer_call('attr_assign', node, args)
+                tracer_call = self.create_tracer_call(EventType.ATTR_ASSIGN, node, args)
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
                 
             elif isinstance(target, ast.Subscript):
@@ -217,7 +218,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
                         ast.Constant(value='value'),
                         value_ref
                     ]
-                    tracer_call = self.create_tracer_call('slice_assign', node, args)
+                    tracer_call = self.create_tracer_call(EventType.SLICE_ASSIGN, node, args)
                 else:
                     # Simple subscript assignment: arr[index] = value
                     index_ref = self.safe_copy_for_expression(target.slice)
@@ -229,8 +230,8 @@ class WhylineInstrumenter(ast.NodeTransformer):
                         ast.Constant(value='value'),
                         value_ref
                     ]
-                    tracer_call = self.create_tracer_call('subscript_assign', node, args)
-                
+                    tracer_call = self.create_tracer_call(EventType.SUBSCRIPT_ASSIGN, node, args)
+
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
         
         return instrumented_stmts
@@ -255,8 +256,8 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='value'),
                 ast.Name(id=node.target.id, ctx=ast.Load())  # Value after assignment
             ]
-            
-            tracer_call = self.create_tracer_call('aug_assign', node, args)
+
+            tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
             
         elif isinstance(node.target, ast.Attribute):
@@ -272,8 +273,8 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='value'),
                 self.safe_copy_for_expression(node.target)
             ]
-            
-            tracer_call = self.create_tracer_call('aug_assign', node, args)
+
+            tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
             
         elif isinstance(node.target, ast.Subscript):
@@ -291,11 +292,12 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 self.safe_copy_for_expression(node.target)
             ]
             
-            tracer_call = self.create_tracer_call('aug_assign', node, args)
+            tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
         
         return instrumented_stmts
     
+    ### Function Instrumentation ###
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
         """Instrument function definitions"""
         # Transform function body first
@@ -312,7 +314,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         ]
         
         # Add function entry tracing
-        entry_tracer = self.create_tracer_call('function_entry', node, args)
+        entry_tracer = self.create_tracer_call(EventType.FUNCTION_ENTRY, node, args)
         
         # Insert at the beginning of function body
         node.body.insert(0, ast.Expr(value=entry_tracer))
@@ -335,10 +337,17 @@ class WhylineInstrumenter(ast.NodeTransformer):
         ]
         
         # Add return tracing
-        tracer_call = self.create_tracer_call('return', node, args)
+        tracer_call = self.create_tracer_call(EventType.RETURN, node, args)
         
         return [ast.Expr(value=tracer_call), node]
+   
+    def visit_Call(self, node: ast.Call) -> ast.Call:
+        """Instrument function calls (basic version)"""
+        self.generic_visit(node)
+        
+        return node 
     
+    ### Control Flow ###
     def visit_If(self, node: ast.If) -> ast.If:
         """Instrument if statements"""
         # Transform children first
@@ -352,7 +361,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
             condition_copy
         ]
         
-        condition_tracer = self.create_tracer_call('condition', node, condition_args)
+        condition_tracer = self.create_tracer_call(EventType.CONDITION, node, condition_args)
         
         # Add branch tracing to if body
         if_args = [
@@ -360,7 +369,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
             ast.Constant(value='if')
         ]
         
-        if_tracer = self.create_tracer_call('branch', node, if_args)
+        if_tracer = self.create_tracer_call(EventType.BRANCH, node, if_args)
         node.body.insert(0, ast.Expr(value=if_tracer))
         
         # Add branch tracing to else body
@@ -375,11 +384,12 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     ast.Constant(value='else')
                 ]
                 
-                else_tracer = self.create_tracer_call('branch', node, else_args)
+                else_tracer = self.create_tracer_call(EventType.BRANCH, node, else_args)
                 node.orelse.insert(0, ast.Expr(value=else_tracer))
         
         return node
     
+    ### Loop Instrumentation ###
     def visit_For(self, node: ast.For) -> ast.For:
         """Instrument for loops"""
         self.generic_visit(node)
@@ -400,7 +410,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         ]
         
         # Add loop iteration tracing
-        loop_tracer = self.create_tracer_call('loop_iteration', node, args)
+        loop_tracer = self.create_tracer_call(EventType.LOOP_ITERATION, node, args)
         node.body.insert(0, ast.Expr(value=loop_tracer))
         
         return node
@@ -418,20 +428,13 @@ class WhylineInstrumenter(ast.NodeTransformer):
         ]
         
         # Add while condition tracing
-        while_tracer = self.create_tracer_call('while_condition', node, args)
+        while_tracer = self.create_tracer_call(EventType.WHILE_CONDITION, node, args)
         node.body.insert(0, ast.Expr(value=while_tracer))
         
         return node
     
-    def visit_Call(self, node: ast.Call) -> ast.Call:
-        """Instrument function calls (basic version)"""
-        self.generic_visit(node)
-        
-        # For now, just return the node as-is
-        # Advanced call instrumentation would require more complex transformation
-        return node
 
-
+# Helper function to instrument code
 def instrument_code(source_code: str, filename: str = "<string>") -> str:
     """Instrument Python source code with Whyline tracing"""
     
@@ -461,11 +464,9 @@ def exec_instrumented(source_code: str, globals_dict: Dict[str, Any] = None) -> 
         globals_dict = {}
     
     # Add the tracer to globals
-    from .tracer import get_tracer
     globals_dict['_whyline_tracer'] = get_tracer()
     
     # Add built-ins
-    import builtins
     globals_dict['__builtins__'] = builtins
     
     # Set __name__ to __main__ to ensure if __name__ == "__main__" blocks execute
@@ -522,31 +523,5 @@ def instrument_file(source_file: str, output_file: str = None) -> str:
 
 
 
-@dataclass
-class TraceEvent:
-    """Runtime data captured when instrumented code executes.
-    
-    Created at runtime when instrumented code runs to store actual execution traces
-    with variable values, function arguments, and other dynamic execution data.
-    """
-    event_id: int
-    filename: str
-    line_no: int
-    event_type: str
-    data: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary representation"""
-        return {
-            'event_id': self.event_id,
-            'filename': self.filename,
-            'line_no': self.line_no,
-            'event_type': self.event_type,
-            'data': self.data
-        }
-    
-    def to_json(self) -> str:
-        """Convert to JSON string"""
-        return json.dumps(self.to_dict(), indent=2)
 
 

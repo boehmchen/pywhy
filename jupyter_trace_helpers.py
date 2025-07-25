@@ -3,15 +3,10 @@ Helper functions for displaying trace comparisons in Jupyter Lab.
 Import this module in your Jupyter notebook to easily visualize test traces.
 """
 
-import sys
-import pytest
-from typing import Dict, Any, List
-from pywhy.trace_visualization import (
-    format_trace, compare_traces, display_trace_comparison, 
-    show_trace_diff, print_trace_comparison
-)
+from typing import Dict, Any
 
 def run_test_with_trace_comparison(test_class_name: str, test_method_name: str) -> Dict[str, Any]:
+    
     """
     Run a specific test and return trace comparison functions.
     

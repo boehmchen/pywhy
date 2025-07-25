@@ -76,7 +76,7 @@ a = b = 5
         assert_trace_matches_pattern(actual_events, expected_trace)
         
         # Additional specific verifications
-        assert_has_event_type(actual_events, EventType.ASSIGN, min_count=5)
+        assert_has_event_type(actual_events, EventType.ASSIGN, min_count=6)
         assert_variable_value_event(actual_events, "x", 10)
         assert_variable_value_event(actual_events, "y", 20)
         assert_variable_value_event(actual_events, "z", 30)

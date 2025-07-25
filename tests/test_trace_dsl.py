@@ -6,7 +6,7 @@ Demonstrates how to create and test tracing events using the DSL.
 import pytest
 from typing import List
 
-from pywhy.instrumenter import TraceEvent
+from pywhy.events import TraceEvent
 from pywhy.events import EventType
 from pywhy.trace_dsl import trace
 from pywhy.trace_analysis import EventMatcher
@@ -115,8 +115,8 @@ class TestTraceEventBuilder:
         )
 
         assert events[0].filename == "test.py"
-        assert events[0].line_no == 15
-        assert events[1].line_no == 10  # Default from set_line
+        assert events[0].lineno == 15
+        assert events[1].lineno == 10  # Default from set_line
 
     def test_builder_reset(self, trace_builder):
         """Test resetting the builder state."""
@@ -332,8 +332,8 @@ class TestTraceEvent:
         event = TraceEvent(
             event_id=1,
             filename="test.py",
-            line_no=10,
-            event_type=EventType.ASSIGN.value,
+            lineno=10,
+            event_type=EventType.ASSIGN,
             data={"var_name": "x", "value": 5},
         )
 
@@ -341,9 +341,13 @@ class TestTraceEvent:
         expected = {
             "event_id": 1,
             "filename": "test.py",
-            "line_no": 10,
+            "lineno": 10,
             "event_type": EventType.ASSIGN.value,
             "data": {"var_name": "x", "value": 5},
+            "timestamp": result["timestamp"],  # Dynamic value
+            "thread_id": result["thread_id"],  # Dynamic value
+            "locals_snapshot": {},
+            "globals_snapshot": {}
         }
 
         assert result == expected
@@ -353,8 +357,8 @@ class TestTraceEvent:
         event = TraceEvent(
             event_id=1,
             filename="test.py",
-            line_no=10,
-            event_type=EventType.ASSIGN.value,
+            lineno=10,
+            event_type=EventType.ASSIGN,
             data={"var_name": "x", "value": 5},
         )
 

@@ -4,11 +4,10 @@ Provides functions to create string representations and diffs of execution trace
 """
 
 import difflib
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List
 from dataclasses import dataclass
 from pywhy.tracer import TraceEvent
 from pywhy.events import EventType
-from pywhy.trace_dsl import TraceEventBuilder
 
 
 @dataclass
@@ -32,36 +31,44 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
     Returns:
         Formatted string representation of the event
     """
-    if hasattr(event, 'event_type'):
-        event_type = event.event_type
-    else:
-        event_type = getattr(event, 'event_type', 'unknown')
+    event_type = getattr(event, 'event_type', 'unknown')
+    print(f"Formatting event: {event_type} with data: {event.data}") 
     
-    # Handle both old and new event formats
-    if hasattr(event, 'data'):
-        # New DSL format
-        data = event.data
-        line_no = getattr(event, 'line_no', 0)
-        filename = getattr(event, 'filename', '<unknown>')
-    else:
-        # Old tracer format
-        data = {}
-        if hasattr(event, 'args') and event.args:
-            # Convert args to data format
-            args = event.args
-            for i in range(0, len(args), 2):
-                if i + 1 < len(args):
-                    data[args[i]] = args[i + 1]
-        line_no = getattr(event, 'lineno', 0)
-        filename = getattr(event, 'filename', '<unknown>')
+    data = event.data
+    line_no = getattr(event, 'line_no', 0)
+    filename = getattr(event, 'filename', '<unknown>')
+    
+    # Check if this is actually tracer format data that needs conversion
+    if 'args' in data and isinstance(data['args'], tuple):
+        # Convert tracer args tuple to proper data format
+        converted_data = {}
+        args = data['args']
+        for i in range(0, len(args), 2):
+            if i + 1 < len(args):
+                converted_data[args[i]] = args[i + 1]
+        data = converted_data
+    elif 'arg_0' in data:
+        # Convert numbered args to proper data format
+        converted_data = {}
+        i = 0
+        while f'arg_{i}' in data:
+            if f'arg_{i+1}' in data:
+                key = data[f'arg_{i}']
+                value = data[f'arg_{i+1}']
+                converted_data[key] = value
+                i += 2
+            else:
+                break
+        if converted_data:
+            data = converted_data
     
     # Format based on event type
-    if event_type == EventType.ASSIGN or event_type == 'assign':
+    if event_type == EventType.ASSIGN:
         var_name = data.get('var_name', '?')
         value = data.get('value', '?')
         base_str = f"ASSIGN {var_name} = {repr(value)}"
         
-    elif event_type == EventType.FUNCTION_ENTRY or event_type == 'function_entry':
+    elif event_type == EventType.FUNCTION_ENTRY:
         func_name = data.get('func_name', '?')
         args = data.get('args', [])
         base_str = f"FUNCTION_ENTRY {func_name}({', '.join(map(repr, args))})"

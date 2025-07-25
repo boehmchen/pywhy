@@ -4,52 +4,21 @@ Inspired by the original Whyline's tracing system.
 """
 
 import threading
-import time
 import inspect
-from typing import Any, List, Dict, Optional, Set
-from dataclasses import dataclass, field
+from typing import Any, List, Dict
 from collections import defaultdict
 import pickle
-import json
-from .events import EventType
-
-
-@dataclass
-class TraceEvent:
-    """Represents a single execution event in the trace"""
-    event_id: int
-    filename: str
-    lineno: int
-    event_type: EventType  # 'assign', 'call_pre', 'call_post', 'return', 'branch', 'condition'
-    timestamp: float
-    thread_id: int
-    locals_snapshot: Dict[str, Any] = field(default_factory=dict)
-    globals_snapshot: Dict[str, Any] = field(default_factory=dict)
-    args: tuple = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
-    
-    def __post_init__(self):
-        # Sanitize snapshots to avoid circular references
-        self.locals_snapshot = self._sanitize_dict(self.locals_snapshot)
-        self.globals_snapshot = self._sanitize_dict(self.globals_snapshot)
-    
-    def _sanitize_dict(self, d: Dict[str, Any]) -> Dict[str, Any]:
-        """Remove unpicklable objects and limit size"""
-        sanitized = {}
-        for k, v in d.items():
-            if k.startswith('_whyline_'):
-                continue
-            try:
-                # Try to pickle to test if it's serializable
-                pickle.dumps(v)
-                sanitized[k] = v
-            except (TypeError, pickle.PickleError, AttributeError):
-                sanitized[k] = f"<unpicklable: {type(v).__name__}>"
-        return sanitized
-
+from .events import EventType, TraceEvent
 
 class WhylineTracer:
-    """Main tracing class that records execution events"""
+    """
+       Main tracing class that records execution events.
+       In comparison to the instrumenter this injected into the code at runtime.
+       
+        This class is thread-safe and can be used to record events across multiple threads.
+         
+        After injection and execution, the tracer can be used to retrieve the events for the given code. 
+    """
     
     def __init__(self):
         self.events: List[TraceEvent] = []
@@ -74,7 +43,7 @@ class WhylineTracer:
         return self.object_ids[obj_id]
     
     def record_event(self, event_id: int, filename: str, lineno: int, 
-                    event_type: str, *args, **kwargs):
+                    event_type: EventType, *args, **kwargs):
         """Record an instrumentation event"""
         if not self.enabled:
             return
@@ -88,19 +57,28 @@ class WhylineTracer:
             
             if frame is None:
                 return
+            
+            # Build data dict from args and kwargs for unified structure
+            data = {}
+            if kwargs:
+                data.update(kwargs)
+            if args:
+                # Store args in data dict for backward compatibility
+                data['args'] = args
+                # Also store individual args with indices for easier access
+                for i, arg in enumerate(args):
+                    data[f'arg_{i}'] = arg
                 
             event = TraceEvent(
                 event_id=event_id,
                 filename=filename,
                 lineno=lineno,
                 event_type=event_type,
-                timestamp=time.time(),
-                thread_id=threading.get_ident(),
+                data=data,
+                # Runtime context will be auto-populated by __post_init__
                 locals_snapshot=frame.f_locals.copy(),
                 globals_snapshot={k: v for k, v in frame.f_globals.items() 
-                                if not k.startswith('__') and not callable(v)},
-                args=args,
-                kwargs=kwargs
+                                if not k.startswith('__') and not callable(v)}
             )
             
             with self.lock:
@@ -129,7 +107,7 @@ class WhylineTracer:
         calls = []
         for event in self.events:
             if event.event_type in [EventType.FUNCTION_ENTRY, EventType.CALL]:
-                if func_name is None or event.kwargs.get('func_name') == func_name:
+                if func_name is None or event.get_func_name() == func_name:
                     calls.append(event)
         return calls
     
