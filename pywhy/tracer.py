@@ -43,10 +43,14 @@ class WhylineTracer:
         return self.object_ids[obj_id]
     
     def record_event(self, event_id: int, filename: str, lineno: int, 
-                    event_type: EventType, *args, **kwargs):
+                    event_type, *args, **kwargs):
         """Record an instrumentation event"""
         if not self.enabled:
             return
+            
+        # Convert string event type to EventType enum if needed
+        if isinstance(event_type, str):
+            event_type = EventType(event_type)
             
         # Get the calling frame to access variables
         frame = inspect.currentframe()
@@ -63,11 +67,13 @@ class WhylineTracer:
             if kwargs:
                 data.update(kwargs)
             if args:
-                # Store args in data dict for backward compatibility
-                data['args'] = args
-                # Also store individual args with indices for easier access
-                for i, arg in enumerate(args):
-                    data[f'arg_{i}'] = arg
+                # Convert args tuple to proper data dictionary format
+                # Args come as: ('var_name', 'x', 'value', 10) -> {'var_name': 'x', 'value': 10}
+                for i in range(0, len(args), 2):
+                    if i + 1 < len(args):
+                        key = args[i]
+                        value = args[i + 1]
+                        data[key] = value
                 
             event = TraceEvent(
                 event_id=event_id,

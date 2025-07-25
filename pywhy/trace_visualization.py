@@ -62,69 +62,70 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
         if converted_data:
             data = converted_data
     
-    # Format based on event type
-    if event_type == EventType.ASSIGN:
-        var_name = data.get('var_name', '?')
-        value = data.get('value', '?')
-        base_str = f"ASSIGN {var_name} = {repr(value)}"
+    assert (type(event_type) is EventType or isinstance(event_type, str))
+    match event_type:
+        case EventType.ASSIGN:
+            var_name = data.get('var_name', '?')
+            value = data.get('value', '?')
+            base_str = f"ASSIGN {var_name} = {repr(value)}"
+            
+        case EventType.FUNCTION_ENTRY:
+            func_name = data.get('func_name', '?')
+            args = data.get('args', [])
+            base_str = f"FUNCTION_ENTRY {func_name}({', '.join(map(repr, args))})"
         
-    elif event_type == EventType.FUNCTION_ENTRY:
-        func_name = data.get('func_name', '?')
-        args = data.get('args', [])
-        base_str = f"FUNCTION_ENTRY {func_name}({', '.join(map(repr, args))})"
+        case EventType.RETURN:
+            value = data.get('value', None)
+            base_str = f"RETURN {repr(value)}"
         
-    elif event_type == EventType.RETURN or event_type == 'return':
-        value = data.get('value', None)
-        base_str = f"RETURN {repr(value)}"
+        case EventType.BRANCH:
+            branch_type = data.get('branch_type', data.get('type', '?'))
+            taken = data.get('taken', data.get('result', '?'))
+            base_str = f"BRANCH {branch_type} -> {taken}"
         
-    elif event_type == EventType.BRANCH or event_type == 'branch':
-        branch_type = data.get('branch_type', data.get('type', '?'))
-        taken = data.get('taken', data.get('result', '?'))
-        base_str = f"BRANCH {branch_type} -> {taken}"
+        case EventType.CONDITION:
+            test = data.get('test', '?')
+            result = data.get('result', '?')
+            base_str = f"CONDITION {test} -> {result}"
         
-    elif event_type == EventType.CONDITION or event_type == 'condition':
-        test = data.get('test', '?')
-        result = data.get('result', '?')
-        base_str = f"CONDITION {test} -> {result}"
+        case EventType.ATTR_ASSIGN:
+            obj_attr = data.get('obj_attr', '?')
+            value = data.get('value', '?')
+            base_str = f"ATTR_ASSIGN {obj_attr} = {repr(value)}"
         
-    elif event_type == EventType.ATTR_ASSIGN or event_type == 'attr_assign':
-        obj_attr = data.get('obj_attr', '?')
-        value = data.get('value', '?')
-        base_str = f"ATTR_ASSIGN {obj_attr} = {repr(value)}"
+        case EventType.SUBSCRIPT_ASSIGN:
+            target = data.get('target', '?')
+            value = data.get('value', '?')
+            base_str = f"SUBSCRIPT_ASSIGN {target} = {repr(value)}"
         
-    elif event_type == EventType.SUBSCRIPT_ASSIGN or event_type == 'subscript_assign':
-        target = data.get('target', '?')
-        value = data.get('value', '?')
-        base_str = f"SUBSCRIPT_ASSIGN {target} = {repr(value)}"
+        case EventType.SLICE_ASSIGN:
+            target = data.get('target', '?')
+            value = data.get('value', '?')
+            base_str = f"SLICE_ASSIGN {target} = {repr(value)}"
         
-    elif event_type == EventType.SLICE_ASSIGN or event_type == 'slice_assign':
-        target = data.get('target', '?')
-        value = data.get('value', '?')
-        base_str = f"SLICE_ASSIGN {target} = {repr(value)}"
+        case EventType.AUG_ASSIGN:
+            target = data.get('target', '?')
+            op = data.get('op', '?')
+            value = data.get('value', '?')
+            base_str = f"AUG_ASSIGN {target} {op}= {repr(value)}"
         
-    elif event_type == EventType.AUG_ASSIGN or event_type == 'aug_assign':
-        target = data.get('target', '?')
-        op = data.get('op', '?')
-        value = data.get('value', '?')
-        base_str = f"AUG_ASSIGN {target} {op}= {repr(value)}"
+        case EventType.LOOP_ITERATION:
+            loop_var = data.get('loop_var', '?')
+            value = data.get('value', '?')
+            base_str = f"LOOP_ITERATION {loop_var} = {repr(value)}"
         
-    elif event_type == EventType.LOOP_ITERATION or event_type == 'loop_iteration':
-        loop_var = data.get('loop_var', '?')
-        value = data.get('value', '?')
-        base_str = f"LOOP_ITERATION {loop_var} = {repr(value)}"
+        case EventType.WHILE_CONDITION:
+            condition = data.get('condition', '?')
+            result = data.get('result', '?')
+            base_str = f"WHILE_CONDITION {condition} -> {result}"
+            
+        case EventType.CALL:
+            func_name = data.get('func_name', '?')
+            args = data.get('args', [])
+            base_str = f"CALL {func_name}({', '.join(map(repr, args))})"
         
-    elif event_type == EventType.WHILE_CONDITION or event_type == 'while_condition':
-        condition = data.get('condition', '?')
-        result = data.get('result', '?')
-        base_str = f"WHILE_CONDITION {condition} -> {result}"
-        
-    elif event_type == EventType.CALL or event_type == 'call':
-        func_name = data.get('func_name', '?')
-        args = data.get('args', [])
-        base_str = f"CALL {func_name}({', '.join(map(repr, args))})"
-        
-    else:
-        base_str = f"{event_type.upper()} {data}"
+        case _:
+            base_str = f"{event_type.upper()} {data}"
     
     if include_details:
         event_id = getattr(event, 'event_id', '?')

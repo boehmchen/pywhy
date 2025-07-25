@@ -236,18 +236,8 @@ def sample_code_execution(request, tracer):
 # Helper functions for assertions
 def assert_has_event_type(events: List[TraceEvent], event_type: EventType, min_count: int = 1):
     """Assert that events contain at least min_count of the specified event type."""
-    # Map DSL event types to tracer event types
-    tracer_event_type = event_type.value
-    if event_type == EventType.FUNCTION_ENTRY:
-        tracer_event_type = "function_entry"
-    elif event_type == EventType.RETURN:
-        tracer_event_type = "return"
-    elif event_type == EventType.CONDITION:
-        tracer_event_type = "condition"
-    elif event_type == EventType.BRANCH:
-        tracer_event_type = "branch"
-    
-    actual_count = len([e for e in events if e.event_type == tracer_event_type])
+    # Use EventType enum directly for consistent comparison
+    actual_count = len([e for e in events if e.event_type == event_type])
     assert actual_count >= min_count, f"Expected at least {min_count} {event_type.value} events, got {actual_count}"
 
 
@@ -260,35 +250,35 @@ def assert_event_sequence(events: List[TraceEvent], expected_types: List[EventTy
 
 def assert_variable_value_event(events: List[TraceEvent], var_name: str, expected_value: Any):
     """Assert that a variable assignment event exists with the expected value."""
-    # For tracer events, look in args for var_name and value
-    assign_events = [e for e in events if e.event_type == "assign"]
+    # Use EventType enum for consistent comparison
+    assign_events = [e for e in events if e.event_type == EventType.ASSIGN]
     assert len(assign_events) > 0, f"No assignment events found"
     
-    # Find event with matching variable name and value
+    # Find event with matching variable name and value using data dictionary format
     for event in assign_events:
-        # args structure: ('var_name', var_name, 'value', value)
-        if len(event.args) >= 4 and event.args[0] == 'var_name' and event.args[1] == var_name:
-            if event.args[2] == 'value' and event.args[3] == expected_value:
-                return  # Found matching event
+        if (event.data.get('var_name') == var_name and 
+            event.data.get('value') == expected_value):
+            return  # Found matching event
     
     # If we get here, no matching event was found
     found_vars = []
     for event in assign_events:
-        if len(event.args) >= 4 and event.args[0] == 'var_name':
-            found_vars.append(f"{event.args[1]}={event.args[3]}")
+        var = event.data.get('var_name', 'unknown')
+        val = event.data.get('value', 'unknown')
+        found_vars.append(f"{var}={val}")
     
     assert False, f"No assignment event found for '{var_name}' with value {expected_value}. Found: {found_vars}"
 
 
 def assert_function_called(events: List[TraceEvent], func_name: str, expected_args: List[Any] = None):
     """Assert that a function was called with optional argument checking."""
-    # For tracer events, look for function_entry events with function name
-    function_events = [e for e in events if e.event_type == "function_entry"]
+    # Use EventType enum for consistent comparison
+    function_events = [e for e in events if e.event_type == EventType.FUNCTION_ENTRY]
     
-    # Find events with matching function name in args
+    # Find events with matching function name using data dictionary format
     matching_events = []
     for event in function_events:
-        if len(event.args) >= 2 and event.args[0] == 'func_name' and event.args[1] == func_name:
+        if event.data.get('func_name') == func_name:
             matching_events.append(event)
     
     assert len(matching_events) > 0, f"No function call events found for '{func_name}'"
@@ -296,14 +286,14 @@ def assert_function_called(events: List[TraceEvent], func_name: str, expected_ar
     if expected_args is not None:
         # Check if any event has matching arguments
         for event in matching_events:
-            if len(event.args) >= 4 and event.args[2] == 'args' and event.args[3] == expected_args:
+            if event.data.get('args') == expected_args:
                 return  # Found matching event
         
         # If we get here, no matching args were found
         found_args = []
         for event in matching_events:
-            if len(event.args) >= 4 and event.args[2] == 'args':
-                found_args.append(event.args[3])
+            args = event.data.get('args', [])
+            found_args.append(args)
         
         assert False, f"Function '{func_name}' was not called with expected args {expected_args}. Found args: {found_args}"
 
@@ -339,7 +329,7 @@ def assert_trace_matches_pattern(actual_events: List[TraceEvent], expected_event
         assert len(actual_events) >= len(expected_events), \
             f"Expected at least {len(expected_events)} events, got {len(actual_events)}"
     
-    # Match events by type and key properties
+    # Match events by type and key properties using data dictionary format
     expected_idx = 0
     for actual_event in actual_events:
         if expected_idx >= len(expected_events):
@@ -351,14 +341,12 @@ def assert_trace_matches_pattern(actual_events: List[TraceEvent], expected_event
         
         # Check if this actual event matches the next expected event
         if actual_event.event_type == expected_event.event_type:
-            # For assign events, also check variable name
-            if (actual_event.event_type == "assign" and 
+            # For assign events, also check variable name using data dictionary
+            if (actual_event.event_type == EventType.ASSIGN and 
                 hasattr(expected_event, 'data') and 
                 'var_name' in expected_event.data):
                 
-                if (len(actual_event.args) >= 2 and 
-                    actual_event.args[0] == 'var_name' and
-                    actual_event.args[1] == expected_event.data['var_name']):
+                if actual_event.data.get('var_name') == expected_event.data['var_name']:
                     expected_idx += 1
             else:
                 expected_idx += 1

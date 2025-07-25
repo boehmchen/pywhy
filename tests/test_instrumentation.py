@@ -646,11 +646,12 @@ calc2 = Calculator.from_string("20")
         assert_has_event_type(actual_events, EventType.ASSIGN, min_count=4)  # calc, result1, result2, calc2
         
         # Verify methods were called
-        function_events = [e for e in actual_events if e.event_type == "function_entry"]
+        function_events = [e for e in actual_events if e.event_type == EventType.FUNCTION_ENTRY]
         func_names = set()
         for event in function_events:
-            if len(event.args) >= 2 and event.args[0] == 'func_name':
-                func_names.add(event.args[1])
+            func_name = event.data.get('func_name')
+            if func_name:
+                func_names.add(func_name)
         
         assert '__init__' in func_names, "Should call __init__ method"
         assert 'add' in func_names, "Should call add method"
@@ -745,11 +746,12 @@ deep_result = level1()
         assert_has_event_type(actual_events, EventType.RETURN, min_count=6)
         
         # Verify nested functions were called
-        function_events = [e for e in actual_events if e.event_type == "function_entry"]
+        function_events = [e for e in actual_events if e.event_type == EventType.FUNCTION_ENTRY]
         func_names = set()
         for event in function_events:
-            if len(event.args) >= 2 and event.args[0] == 'func_name':
-                func_names.add(event.args[1])
+            func_name = event.data.get('func_name')
+            if func_name:
+                func_names.add(func_name)
         
         assert 'outer_function' in func_names, "Should call outer_function"
         assert 'inner_function' in func_names, "Should call inner_function"
@@ -839,26 +841,25 @@ tail_fact_result = tail_factorial(5)
         # Flexible verification - check that key recursive patterns exist
         # Look for function entries for factorial with decreasing arguments
         factorial_entries = [e for e in actual_events 
-                           if (e.event_type == "function_entry" and 
-                               len(e.args) >= 4 and 
-                               e.args[1] == "factorial")]
+                           if (e.event_type == EventType.FUNCTION_ENTRY and 
+                               e.data.get('func_name') == "factorial")]
         
         # Should have multiple factorial calls (at least for 4, 3, 2, 1)
-        factorial_args = [e.args[3] for e in factorial_entries if len(e.args) >= 4]
+        factorial_first_args = [e.data.get('args', [None])[0] for e in factorial_entries if e.data.get('args')]
         
         assert len(factorial_entries) >= 4, f"Expected at least 4 factorial calls, got {len(factorial_entries)}"
         
         # Check that we have calls with expected argument patterns
-        assert any(args == [4] for args in factorial_args), "Should have factorial(4) call"
-        assert any(args == [1] for args in factorial_args), "Should have factorial(1) call"
+        assert any(arg == 4 for arg in factorial_first_args), "Should have factorial(4) call"
+        assert any(arg == 1 for arg in factorial_first_args), "Should have factorial(1) call"
         
         # Validate basic recursion patterns instead
         # Should record multiple function entries for recursion
-        function_events = [e for e in actual_events if e.event_type == "function_entry"]
+        function_events = [e for e in actual_events if e.event_type == EventType.FUNCTION_ENTRY]
         assert len(function_events) >= 10, "Should record many function entries for all recursive calls"
         
         # Should record multiple return events
-        return_events = [e for e in actual_events if e.event_type == "return"]
+        return_events = [e for e in actual_events if e.event_type == EventType.RETURN]
         assert len(return_events) >= 10, "Should record many return events for all recursive calls"
         
         # Verify results
@@ -1589,11 +1590,12 @@ duplicate_sorted = quick_sort([3, 1, 3, 1, 3])
         assert_performance_bounds(execution_time, 3.0, "Sorting algorithms instrumentation")
         
         # Should record function entries for all sorting functions
-        function_events = [e for e in actual_events if e.event_type == "function_entry"]
+        function_events = [e for e in actual_events if e.event_type == EventType.FUNCTION_ENTRY]
         func_names = set()
         for event in function_events:
-            if len(event.args) >= 2 and event.args[0] == 'func_name':
-                func_names.add(event.args[1])
+            func_name = event.data.get('func_name')
+            if func_name:
+                func_names.add(func_name)
         
         assert 'merge_sort' in func_names, "Should call merge_sort function"
         assert 'merge' in func_names, "Should call merge function"
@@ -1931,11 +1933,12 @@ class TestInstrumentationPerformance:
         assert_event_count_bounds(actual_events, 20, 500, "Complex program")
         
         # Verify trace has expected high-level structure using DSL
-        function_events = [e for e in actual_events if e.event_type == "function_entry"]
+        function_events = [e for e in actual_events if e.event_type == EventType.FUNCTION_ENTRY]
         func_names = set()
         for event in function_events:
-            if len(event.args) >= 2 and event.args[0] == 'func_name':
-                func_names.add(event.args[1])
+            func_name = event.data.get('func_name')
+            if func_name:
+                func_names.add(func_name)
         
         assert 'merge_sort' in func_names, "Should call merge_sort function"
         assert 'merge' in func_names, "Should call merge function"

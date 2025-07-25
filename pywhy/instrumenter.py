@@ -94,7 +94,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
             ast.Constant(value=event_id),
             ast.Constant(value=self.filename),
             ast.Constant(value=getattr(node, 'lineno', 0)),
-            ast.Constant(value=event_type)
+            ast.Constant(value=event_type.value)  # Convert EventType enum to string
         ]
         
         if extra_args:

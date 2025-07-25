@@ -4,8 +4,7 @@ Provides fluent API for creating trace events in tests and utilities.
 """
 import json
 from typing import List, Dict, Any, Optional
-from .instrumenter import TraceEvent
-from .events import EventType
+from .events import TraceEvent, EventType
 
 
 class TraceEventBuilder:
