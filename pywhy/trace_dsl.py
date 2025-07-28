@@ -17,18 +17,27 @@ class TraceEventBuilder:
         self._line_no = 1
         
     def reset(self) -> 'TraceEventBuilder':
-        """Reset the builder state"""
+        """Reset the builder state.
+        
+        Example usage: builder.assign("x", 10).reset().assign("y", 20)
+        """
         self.events = []
         self._current_event_id = 0
         return self
         
     def set_filename(self, filename: str) -> 'TraceEventBuilder':
-        """Set the default filename for events"""
+        """Set the default filename for events.
+        
+        Example usage: trace().set_filename("test.py").assign("x", 10)
+        """
         self._filename = filename
         return self
         
     def set_line(self, line_no: int) -> 'TraceEventBuilder':
-        """Set the default line number for events"""
+        """Set the default line number for events.
+        
+        Example usage: trace().set_line(5).assign("x", 10)
+        """
         self._line_no = line_no
         return self
         
@@ -50,81 +59,92 @@ class TraceEventBuilder:
         self.events.append(event)
         return event
         
-    # Variable assignment events
-    def assign(self, var_name: str, value: Any, deps: List[str] = None, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a variable assignment event"""
-        data = {
-            'var_name': var_name,
-            'value': value
-        }
+    # Unified assignment method
+    def assign(self, target: str, value: Any, assign_type: str = "simple", deps: List[str] = None, 
+               line_no: Optional[int] = None, **kwargs) -> 'TraceEventBuilder':
+        """Unified assignment method for all assignment types.
+        
+        Args:
+            target: Assignment target (var name, obj.attr, container[index], etc.)
+            value: Value being assigned
+            assign_type: Type of assignment - "simple", "attr", "index", "slice", "aug", "aug_attr", "aug_index"
+            deps: List of variable dependencies
+            line_no: Optional line number
+            **kwargs: Additional parameters for specific assignment types
+                - For "attr": obj_name, attr_name
+                - For "index": container_name, index
+                - For "slice": container_name, lower, upper, step
+                - For "aug_attr": obj_name, attr_name
+                - For "aug_index": container_name, index
+        
+        Examples:
+            .assign("x", 10)                                    # x = 10
+            .assign("obj.attr", 10, "attr", obj_name="obj", attr_name="attr")  # obj.attr = 10
+            .assign("arr[0]", 10, "index", container_name="arr", index=0)      # arr[0] = 10
+            .assign("x", 15, "aug", deps=['x', 'y'])           # x += y (result 15)
+            .assign("obj.size", 15, "aug_attr", obj_name="obj", attr_name="size")  # obj.size += 10
+            .assign("arr[0]", 15, "aug_index", container_name="arr", index=0)      # arr[0] += 5
+            .assign("arr[1:3]", [10, 20], "slice", container_name="arr", lower=1, upper=3)  # arr[1:3] = [10, 20]
+        """
+        # All assignments now use ASSIGN EventType with different target_type and assign_type
+        event_type = EventType.ASSIGN
+        
+        if assign_type == "simple":
+            data = {'var_name': target, 'value': value, 'target_type': 'variable', 'assign_type': 'simple'}
+        
+        elif assign_type == "attr":
+            obj_name = kwargs.get('obj_name', target.split('.')[0] if '.' in target else 'obj')
+            attr_name = kwargs.get('attr_name', target.split('.')[1] if '.' in target else target)
+            data = {'obj': obj_name, 'obj_attr': attr_name, 'value': value, 'target_type': 'attribute', 'assign_type': 'simple'}
+        
+        elif assign_type == "index":
+            container_name = kwargs.get('container_name', target.split('[')[0] if '[' in target else target)
+            index = kwargs.get('index', 0)
+            data = {'container': container_name, 'index': index, 'value': value, 'target_type': 'index', 'assign_type': 'simple'}
+        
+        elif assign_type == "slice":
+            container_name = kwargs.get('container_name', target.split('[')[0] if '[' in target else target)
+            data = {
+                'container': container_name,
+                'slice_type': 'slice',
+                'lower': kwargs.get('lower'),
+                'upper': kwargs.get('upper'), 
+                'step': kwargs.get('step'),
+                'value': value,
+                'target_type': 'slice',
+                'assign_type': 'simple'
+            }
+        
+        elif assign_type == "aug":
+            data = {'var_name': target, 'value': value, 'target_type': 'variable', 'assign_type': 'aug'}
+        
+        elif assign_type == "aug_attr":
+            obj_name = kwargs.get('obj_name', target.split('.')[0] if '.' in target else 'obj')
+            attr_name = kwargs.get('attr_name', target.split('.')[1] if '.' in target else target)
+            data = {'obj': obj_name, 'obj_attr': attr_name, 'value': value, 'target_type': 'attribute', 'assign_type': 'aug'}
+        
+        elif assign_type == "aug_index":
+            container_name = kwargs.get('container_name', target.split('[')[0] if '[' in target else target)
+            index = kwargs.get('index', 0)
+            data = {'container': container_name, 'index': index, 'value': value, 'target_type': 'index', 'assign_type': 'aug'}
+        
+        else:
+            raise ValueError(f"Unknown assignment type: {assign_type}")
+        
         if deps:
             data['deps'] = deps
-        self._create_event(EventType.ASSIGN, data, line_no)
-        return self
         
-    def attr_assign(self, obj_name: str, attr: str, value: Any, 
-                   line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create an attribute assignment event"""
-        self._create_event(EventType.ATTR_ASSIGN, {
-            'obj_attr': attr,
-            'obj': obj_name,
-            'value': value
-        }, line_no)
-        return self
-        
-    def subscript_assign(self, container: str, index: Any, value: Any,
-                        line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a subscript assignment event"""
-        self._create_event(EventType.SUBSCRIPT_ASSIGN, {
-            'container': container,
-            'index': index,
-            'value': value
-        }, line_no)
-        return self
-        
-    def aug_assign(self, var_name: str, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create an augmented assignment event for variables"""
-        self._create_event(EventType.AUG_ASSIGN, {
-            'var_name': var_name,
-            'value': value
-        }, line_no)
-        return self
-        
-    def aug_assign_attr(self, obj_attr: str, obj: Any, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create an augmented assignment event for attributes"""
-        self._create_event(EventType.AUG_ASSIGN, {
-            'obj_attr': obj_attr,
-            'obj': obj,
-            'value': value
-        }, line_no)
-        return self
-        
-    def aug_assign_subscript(self, container: Any, index: Any, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create an augmented assignment event for subscripts"""
-        self._create_event(EventType.AUG_ASSIGN, {
-            'container': container,
-            'index': index,
-            'value': value
-        }, line_no)
-        return self
-        
-    def slice_assign(self, container: str, lower: Optional[int], upper: Optional[int], 
-                    step: Optional[int], value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a slice assignment event (e.g., arr[1:3] = values)"""
-        self._create_event(EventType.SLICE_ASSIGN, {
-            'container': container,
-            'slice_type': 'slice',
-            'lower': lower,
-            'upper': upper,
-            'step': step,
-            'value': value
-        }, line_no)
+        self._create_event(event_type, data, line_no)
         return self
         
     # Function events
     def function_entry(self, func_name: str, args: List[Any], 
                       line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a function entry event"""
+        """Create a function entry event.
+        
+        Example Python code: def add(a, b): ...  # when called with add(3, 4)
+        DSL usage: .function_entry("add", [3, 4])
+        """
         self._create_event(EventType.FUNCTION_ENTRY, {
             'func_name': func_name,
             'args': args
@@ -132,14 +152,22 @@ class TraceEventBuilder:
         return self
         
     def return_event(self, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a return event"""
+        """Create a return event.
+        
+        Example Python code: return a + b  # returns 7
+        DSL usage: .return_event(7)
+        """
         self._create_event(EventType.RETURN, {
             'value': value
         }, line_no)
         return self
         
     def call(self, func_name: str, args: List[Any], line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a general function call event"""
+        """Create a general function call event.
+        
+        Example Python code: result = len([1, 2, 3])
+        DSL usage: .call("len", [[1, 2, 3]])
+        """
         self._create_event(EventType.CALL, {
             'func_name': func_name,
             'args': args
@@ -149,7 +177,11 @@ class TraceEventBuilder:
     # Control flow events
         
     def branch(self, condition: str, result: bool, decision: str, deps: List[str] = None, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a branch event with integrated condition"""
+        """Create a branch event with integrated condition.
+        
+        Example Python code: if x > 5: ...  # x is 10, condition is True, takes if branch
+        DSL usage: .branch("x > 5", True, "if_block", deps=['x'])
+        """
         data = {
             'condition': condition,
             'result': result,
@@ -162,29 +194,46 @@ class TraceEventBuilder:
         
     def loop_iteration(self, target: str, iter_value: Any,
                       line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a loop iteration event"""
+        """Create a loop iteration event.
+        
+        Example Python code: for i in [1, 2, 3]: ...  # first iteration with i=1
+        DSL usage: .loop_iteration("i", 1)
+        """
         self._create_event(EventType.LOOP_ITERATION, {
             'target': target,
             'iter_value': iter_value
         }, line_no)
         return self
         
-    def while_condition(self, condition: str, result: bool, line_no: Optional[int] = None) -> 'TraceEventBuilder':
-        """Create a while condition event"""
-        self._create_event(EventType.WHILE_CONDITION, {
+    def while_condition(self, condition: str, result: bool, deps: List[str] = None, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+        """Create a while condition event.
+        
+        Example Python code: while x < 10: ...  # x is 5, condition is True
+        DSL usage: .while_condition("x < 10", True, deps=['x'])
+        """
+        data = {
             'condition': condition,
             'result': result
-        }, line_no)
+        }
+        if deps:
+            data['deps'] = deps
+        self._create_event(EventType.WHILE_CONDITION, data, line_no)
         return self
     
         
     # Utility methods
     def build(self) -> List[TraceEvent]:
-        """Return the built trace events"""
+        """Return the built trace events.
+        
+        Example usage: events = trace().assign("x", 10).build()
+        """
         return self.events.copy()
         
     def print_events(self) -> None:
-        """Print all events in a readable format"""
+        """Print all events in a readable format.
+        
+        Example usage: trace().assign("x", 10).print_events()
+        """
         for event in self.events:
             print(f"Event #{event.event_id} ({event.event_type}) at {event.filename}:{event.lineno}")
             for key, value in event.data.items():
@@ -192,7 +241,10 @@ class TraceEventBuilder:
             print()
             
     def to_json(self) -> str:
-        """Convert all events to JSON"""
+        """Convert all events to JSON.
+        
+        Example usage: json_str = trace().assign("x", 10).to_json()
+        """
         return json.dumps([event.to_dict() for event in self.events], indent=2)
 
 
@@ -262,15 +314,15 @@ class TraceSequence:
     def object_operations(self, obj_name: str) -> 'TraceSequence':
         """Create a sequence demonstrating object operations"""
         # Attribute assignment
-        self.builder.attr_assign(obj_name, "name", "test_object")
-        self.builder.attr_assign(obj_name, "value", 42)
+        self.builder.assign(f"{obj_name}.name", "test_object", "attr", obj_name=obj_name, attr_name="name")
+        self.builder.assign(f"{obj_name}.value", 42, "attr", obj_name=obj_name, attr_name="value")
         
-        # Subscript assignment (for dict-like objects)
-        self.builder.subscript_assign(obj_name, "key1", "value1")
-        self.builder.subscript_assign(obj_name, 0, "first_item")
+        # Index assignment (for dict-like objects)
+        self.builder.assign(f"{obj_name}[key1]", "value1", "index", container_name=obj_name, index="key1")
+        self.builder.assign(f"{obj_name}[0]", "first_item", "index", container_name=obj_name, index=0)
         
         # Slice assignment
-        self.builder.slice_assign(obj_name, 1, 3, None, ["new", "items"])
+        self.builder.assign(f"{obj_name}[1:3]", ["new", "items"], "slice", container_name=obj_name, lower=1, upper=3, step=None)
         
         return self
     
@@ -280,10 +332,10 @@ class TraceSequence:
         self.builder.assign(var_name, 100)
         
         # Augmented assignments
-        self.builder.aug_assign(var_name, 110)  # After += 10
-        self.builder.aug_assign(var_name, 220)  # After *= 2
-        self.builder.aug_assign(var_name, 215)  # After -= 5
-        self.builder.aug_assign(var_name, 71)   # After //= 3
+        self.builder.assign(var_name, 110, "aug")  # After += 10
+        self.builder.assign(var_name, 220, "aug")  # After *= 2
+        self.builder.assign(var_name, 215, "aug")  # After -= 5
+        self.builder.assign(var_name, 71, "aug")   # After //= 3
         
         return self
     

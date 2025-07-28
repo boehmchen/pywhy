@@ -65,9 +65,36 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
     assert (type(event_type) is EventType or isinstance(event_type, str))
     match event_type:
         case EventType.ASSIGN:
-            var_name = data.get('var_name', '?')
+            target_type = data.get('target_type', 'variable')
             value = data.get('value', '?')
-            base_str = f"ASSIGN {var_name} = {repr(value)}"
+            
+            if target_type == 'variable':
+                var_name = data.get('var_name', '?')
+                base_str = f"ASSIGN {var_name} = {repr(value)}"
+            
+            elif target_type == 'attribute':
+                obj_attr = data.get('obj_attr', '?')
+                base_str = f"ASSIGN {obj_attr} = {repr(value)}"
+            
+            elif target_type == 'index':
+                container = data.get('container', '?')
+                index = data.get('index', '?')
+                target = f"{container}[{index}]"
+                base_str = f"ASSIGN {target} = {repr(value)}"
+            
+            elif target_type == 'slice':
+                container = data.get('container', '?')
+                lower = data.get('lower', '?')
+                upper = data.get('upper', '?')
+                step = data.get('step')
+                if step is not None:
+                    target = f"{container}[{lower}:{upper}:{step}]"
+                else:
+                    target = f"{container}[{lower}:{upper}]"
+                base_str = f"ASSIGN {target} = {repr(value)}"
+            
+            else:
+                base_str = f"ASSIGN ? = {repr(value)}"
             
         case EventType.FUNCTION_ENTRY:
             func_name = data.get('func_name', '?')
@@ -83,27 +110,7 @@ def format_trace_event(event: TraceEvent, include_details: bool = True) -> str:
             decision = data.get('decision', data.get('taken', '?'))  # Support both for compatibility
             base_str = f"BRANCH {condition} -> {decision}"
         
-        
-        case EventType.ATTR_ASSIGN:
-            obj_attr = data.get('obj_attr', '?')
-            value = data.get('value', '?')
-            base_str = f"ATTR_ASSIGN {obj_attr} = {repr(value)}"
-        
-        case EventType.SUBSCRIPT_ASSIGN:
-            target = data.get('target', '?')
-            value = data.get('value', '?')
-            base_str = f"SUBSCRIPT_ASSIGN {target} = {repr(value)}"
-        
-        case EventType.SLICE_ASSIGN:
-            target = data.get('target', '?')
-            value = data.get('value', '?')
-            base_str = f"SLICE_ASSIGN {target} = {repr(value)}"
-        
-        case EventType.AUG_ASSIGN:
-            target = data.get('target', '?')
-            op = data.get('op', '?')
-            value = data.get('value', '?')
-            base_str = f"AUG_ASSIGN {target} {op}= {repr(value)}"
+        # AUG_ASSIGN is now handled within EventType.ASSIGN case using assign_type field
         
         case EventType.LOOP_ITERATION:
             loop_var = data.get('loop_var', '?')

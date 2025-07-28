@@ -4,8 +4,6 @@ Demonstrates how to create and test tracing events using the DSL.
 """
 
 import pytest
-from typing import List
-
 from pywhy.events import TraceEvent
 from pywhy.events import EventType
 from pywhy.trace_dsl import trace
@@ -78,29 +76,34 @@ class TestTraceEventBuilder:
     def test_assignment_variations(self, trace_builder):
         """Test different types of assignment events."""
         events = (
-            trace_builder.attr_assign("obj", "value", 42)
-            .subscript_assign("arr", 0, "hello")
-            .aug_assign("counter", 1)
+            trace_builder.assign("obj.value", 42, "attr", obj_name="obj", attr_name="value")
+            .assign("arr[0]", "hello", "index", container_name="arr", index=0)
+            .assign("counter", 1, "aug")
             .build()
         )
 
         assert len(events) == 3
 
         # Test attribute assignment
-        assert events[0].event_type == EventType.ATTR_ASSIGN.value
+        assert events[0].event_type == EventType.ASSIGN.value
         assert events[0].data["obj_attr"] == "value"
+        assert events[0].data["obj"] == "obj"
         assert events[0].data["value"] == 42
+        assert events[0].data["target_type"] == "attribute"
 
-        # Test subscript assignment
-        assert events[1].event_type == EventType.SUBSCRIPT_ASSIGN.value
+        # Test index assignment
+        assert events[1].event_type == EventType.ASSIGN.value
         assert events[1].data["container"] == "arr"
         assert events[1].data["index"] == 0
         assert events[1].data["value"] == "hello"
+        assert events[1].data["target_type"] == "index"
 
         # Test augmented assignment
-        assert events[2].event_type == EventType.AUG_ASSIGN.value
+        assert events[2].event_type == EventType.ASSIGN.value
         assert events[2].data["var_name"] == "counter"
         assert events[2].data["value"] == 1
+        assert events[2].data["assign_type"] == "aug"
+        assert events[2].data["target_type"] == "variable"
 
     def test_filename_and_line_numbers(self, trace_builder):
         """Test setting filename and line numbers."""
@@ -139,109 +142,7 @@ class TestTraceEventBuilder:
         assert '"value": 42' in json_str
 
 
-@pytest.mark.dsl
-class TestTraceSequence:
-    """Test the TraceSequence helper class."""
-
-    def test_simple_assignment_sequence(self, trace_sequence):
-        """Test simple assignment sequence."""
-        events = (
-            trace_sequence.simple_assignment("x", 5).simple_assignment("y", 10).build()
-        )
-
-        assert len(events) == 2
-        assert all(event.event_type == EventType.ASSIGN.value for event in events)
-
-        # Check values
-        assert events[0].data["var_name"] == "x"
-        assert events[0].data["value"] == 5
-        assert events[1].data["var_name"] == "y"
-        assert events[1].data["value"] == 10
-
-    def test_function_call_sequence(self, trace_sequence):
-        """Test function call with return."""
-        events = trace_sequence.function_call("add", [5, 10], 15).build()
-
-        assert len(events) == 2
-        assert events[0].event_type == EventType.FUNCTION_ENTRY.value
-        assert events[0].data["func_name"] == "add"
-        assert events[0].data["args"] == [5, 10]
-
-        assert events[1].event_type == EventType.RETURN.value
-        assert events[1].data["value"] == 15
-
-    @pytest.mark.parametrize(
-        "condition,result,then_assignments,else_assignments",
-        [
-            ("x > 0", True, [("result", "positive")], None),
-            ("x > 0", False, None, [("result", "non-positive")]),
-            ("y == 10", True, [("a", 1), ("b", 2)], None),
-        ],
-    )
-    def test_if_statement_parametrized(
-        self, trace_sequence, condition, result, then_assignments, else_assignments
-    ):
-        """Test if statement with different conditions and assignments."""
-        events = trace_sequence.if_statement(
-            condition, result, then_assignments, else_assignments
-        ).build()
-
-        # Should have branch + assignments
-        expected_count = 1  # branch with integrated condition
-        if then_assignments and result:
-            expected_count += len(then_assignments)
-        elif else_assignments and not result:
-            expected_count += len(else_assignments)
-
-        assert len(events) == expected_count
-        assert events[0].event_type == EventType.BRANCH.value
-        assert events[0].data["condition"] == condition
-        assert events[0].data["result"] == result
-
-    def test_for_loop_sequence(self, trace_sequence):
-        """Test for loop sequence."""
-        events = trace_sequence.for_loop("i", [1, 2, 3], [("sum", "updated")]).build()
-
-        # Should have 3 iterations, each with loop_iteration + assignment
-        assert len(events) == 6
-
-        loop_events = [
-            e for e in events if e.event_type == EventType.LOOP_ITERATION.value
-        ]
-        assert len(loop_events) == 3
-
-        # Check iteration values
-        for i, event in enumerate(loop_events):
-            assert event.data["target"] == "i"
-            assert event.data["iter_value"] == i + 1
-
-    def test_complex_sequence(self, trace_sequence):
-        """Test a complex sequence combining multiple patterns."""
-        events = (
-            trace_sequence.simple_assignment("x", 10)
-            .function_call("process", [10], 20)
-            .if_statement("result > 15", True, [("status", "high")])
-            .for_loop("i", [1, 2], [("count", "incremented")])
-            .build()
-        )
-
-        # Should have a reasonable number of events
-        assert len(events) > 5
-
-        # Should contain all expected event types
-        event_types = {e.event_type for e in events}
-        expected_types = {
-            EventType.ASSIGN.value,
-            EventType.FUNCTION_ENTRY.value,
-            EventType.RETURN.value,
-            EventType.BRANCH.value,
-            EventType.LOOP_ITERATION.value,
-        }
-
-        assert expected_types.issubset(event_types)
-
-
-@pytest.mark.dsl
+pytest.mark.dsl
 class TestEventMatcher:
     """Test the EventMatcher utility class."""
 
@@ -416,3 +317,138 @@ def test_dsl_integration_with_real_tracing():
         assert hasattr(event, "event_type")
         assert hasattr(event, "data")
         assert event.event_type == EventType.ASSIGN.value
+
+
+@pytest.mark.dsl
+class TestTraceEventBuilderExamples:
+    """Test that the documentation examples in TraceEventBuilder work correctly."""
+    
+    def test_assign_example(self):
+        """Test assign example from docstring: x = 10 + y"""
+        events = trace().assign("x", 10, deps=['y']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'var_name': 'x', 'value': 10, 'target_type': 'variable', 'assign_type': 'simple', 'deps': ['y']}
+    
+    def test_attr_assign_example(self):
+        """Test attr_assign example from docstring: obj.x = 10"""
+        events = trace().assign("obj.x", 10, "attr", obj_name="obj", attr_name="x").build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'obj_attr': 'x', 'obj': 'obj', 'value': 10, 'target_type': 'attribute', 'assign_type': 'simple'}
+    
+    def test_index_assign_example(self):
+        """Test index assign example from docstring: arr[i] = 10"""
+        events = trace().assign("arr[0]", 10, "index", container_name="arr", index=0, deps=['i']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'container': 'arr', 'index': 0, 'value': 10, 'target_type': 'index', 'assign_type': 'simple', 'deps': ['i']}
+    
+    def test_aug_assign_example(self):
+        """Test aug_assign example from docstring: x += y (x was 5, y was 3, now x is 8)"""
+        events = trace().assign("x", 8, "aug", deps=['x', 'y']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'var_name': 'x', 'value': 8, 'target_type': 'variable', 'assign_type': 'aug', 'deps': ['x', 'y']}
+    
+    def test_aug_assign_attr_example(self):
+        """Test aug_assign_attr example from docstring: obj.size += 10 (obj.size was 5, now it's 15)"""
+        events = trace().assign("obj.size", 15, "aug_attr", obj_name="obj", attr_name="size", deps=['obj']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'obj_attr': 'size', 'obj': 'obj', 'value': 15, 'target_type': 'attribute', 'assign_type': 'aug', 'deps': ['obj']}
+    
+    def test_aug_assign_index_example(self):
+        """Test aug_assign_index example from docstring: arr[0] += 5 (arr[0] was 10, now it's 15)"""
+        events = trace().assign("arr[0]", 15, "aug_index", container_name="arr", index=0, deps=['arr']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {'container': 'arr', 'index': 0, 'value': 15, 'target_type': 'index', 'assign_type': 'aug', 'deps': ['arr']}
+    
+    def test_slice_assign_example(self):
+        """Test slice_assign example from docstring: arr[1:3] = [10, 20]"""
+        events = trace().assign("arr[1:3]", [10, 20], "slice", container_name="arr", lower=1, upper=3, step=None).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.ASSIGN
+        assert events[0].data == {
+            'container': 'arr', 
+            'slice_type': 'slice',
+            'lower': 1, 
+            'upper': 3, 
+            'step': None, 
+            'value': [10, 20],
+            'target_type': 'slice',
+            'assign_type': 'simple'
+        }
+    
+    def test_function_entry_example(self):
+        """Test function_entry example from docstring: def add(a, b): ... when called with add(3, 4)"""
+        events = trace().function_entry("add", [3, 4]).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.FUNCTION_ENTRY
+        assert events[0].data == {'func_name': 'add', 'args': [3, 4]}
+    
+    def test_return_event_example(self):
+        """Test return_event example from docstring: return a + b # returns 7"""
+        events = trace().return_event(7).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.RETURN
+        assert events[0].data == {'value': 7}
+    
+    def test_call_example(self):
+        """Test call example from docstring: result = len([1, 2, 3])"""
+        events = trace().call("len", [[1, 2, 3]]).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.CALL
+        assert events[0].data == {'func_name': 'len', 'args': [[1, 2, 3]]}
+    
+    def test_branch_example(self):
+        """Test branch example from docstring: if x > 5: ... # x is 10, condition is True, takes if branch"""
+        events = trace().branch("x > 5", True, "if_block", deps=['x']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.BRANCH
+        assert events[0].data == {
+            'condition': 'x > 5', 
+            'result': True, 
+            'decision': 'if_block', 
+            'deps': ['x']
+        }
+    
+    def test_loop_iteration_example(self):
+        """Test loop_iteration example from docstring: for i in [1, 2, 3]: ... # first iteration with i=1"""
+        events = trace().loop_iteration("i", 1).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.LOOP_ITERATION
+        assert events[0].data == {'target': 'i', 'iter_value': 1}
+    
+    def test_while_condition_example(self):
+        """Test while_condition example from docstring: while x < 10: ... # x is 5, condition is True"""
+        events = trace().while_condition("x < 10", True, deps=['x']).build()
+        assert len(events) == 1
+        assert events[0].event_type == EventType.WHILE_CONDITION
+        assert events[0].data == {'condition': 'x < 10', 'result': True, 'deps': ['x']}
+    
+    def test_utility_methods_examples(self):
+        """Test utility method examples from docstrings"""
+        # Test build() example
+        events = trace().assign("x", 10).build()
+        assert len(events) == 1
+        assert events[0].data['var_name'] == 'x'
+        
+        # Test reset() example - builder.assign("x", 10).reset().assign("y", 20)
+        builder = trace()
+        builder.assign("x", 10)
+        assert len(builder.events) == 1
+        builder.reset()
+        assert len(builder.events) == 0
+        builder.assign("y", 20)
+        assert len(builder.events) == 1
+        assert builder.events[0].data['var_name'] == 'y'
+        
+        # Test set_filename() example
+        events = trace().set_filename("test.py").assign("x", 10).build()
+        assert events[0].filename == "test.py"
+        
+        # Test set_line() example
+        events = trace().set_line(5).assign("x", 10).build()
+        assert events[0].lineno == 5

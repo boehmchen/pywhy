@@ -13,8 +13,7 @@ from pywhy.instrumenter import exec_instrumented
 from pywhy.events import EventType
 from pywhy.trace_dsl import trace
 from pywhy.trace_visualization import (
-    format_trace, compare_traces, display_trace_comparison, 
-    create_test_trace_comparison_function, show_trace_diff, print_trace_comparison
+    format_trace, compare_traces, show_trace_diff, print_trace_comparison
 )
 from .conftest import (
     assert_has_event_type, assert_variable_value_event, assert_function_called,
@@ -452,11 +451,11 @@ while x < 2 and y < 2:
         expected_trace = (trace()
                          .assign("counter", 0)
                          .while_condition("counter < 3", True)
-                         .aug_assign("counter", 1)
+                         .assign("counter", 1, "aug")
                          .while_condition("counter < 3", True)
-                         .aug_assign("counter", 2)
+                         .assign("counter", 2, "aug")
                          .while_condition("counter < 3", True)
-                         .aug_assign("counter", 3)
+                         .assign("counter", 3, "aug")
                          .while_condition("counter < 3", False)
                          .assign("never_run", 0)
                          .while_condition("never_run > 10", False)

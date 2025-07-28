@@ -14,10 +14,6 @@ from typing import Dict, Any, Optional
 class EventType(StrEnum):
     """Types of trace events that can be recorded during execution"""
     ASSIGN = "assign"
-    ATTR_ASSIGN = "attr_assign"  
-    SUBSCRIPT_ASSIGN = "subscript_assign"
-    SLICE_ASSIGN = "slice_assign"
-    AUG_ASSIGN = "aug_assign"
     FUNCTION_ENTRY = "function_entry"
     RETURN = "return"
     BRANCH = "branch"
