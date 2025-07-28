@@ -51,12 +51,15 @@ class TraceEventBuilder:
         return event
         
     # Variable assignment events
-    def assign(self, var_name: str, value: Any, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def assign(self, var_name: str, value: Any, deps: List[str] = None, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a variable assignment event"""
-        self._create_event(EventType.ASSIGN, {
+        data = {
             'var_name': var_name,
             'value': value
-        }, line_no)
+        }
+        if deps:
+            data['deps'] = deps
+        self._create_event(EventType.ASSIGN, data, line_no)
         return self
         
     def attr_assign(self, obj_name: str, attr: str, value: Any, 
@@ -145,13 +148,16 @@ class TraceEventBuilder:
         
     # Control flow events
         
-    def branch(self, condition: str, result: bool, decision: str, line_no: Optional[int] = None) -> 'TraceEventBuilder':
+    def branch(self, condition: str, result: bool, decision: str, deps: List[str] = None, line_no: Optional[int] = None) -> 'TraceEventBuilder':
         """Create a branch event with integrated condition"""
-        self._create_event(EventType.BRANCH, {
+        data = {
             'condition': condition,
             'result': result,
             'decision': decision  # Should be "if_block", "else_block", "elif_block", or "skip_block"
-        }, line_no)
+        }
+        if deps:
+            data['deps'] = deps
+        self._create_event(EventType.BRANCH, data, line_no)
         return self
         
     def loop_iteration(self, target: str, iter_value: Any,
@@ -170,6 +176,7 @@ class TraceEventBuilder:
             'result': result
         }, line_no)
         return self
+    
         
     # Utility methods
     def build(self) -> List[TraceEvent]:

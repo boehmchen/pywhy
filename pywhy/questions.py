@@ -8,11 +8,12 @@ from typing import List, Any, Optional
 from dataclasses import dataclass, field
 from .tracer import TraceEvent, WhylineTracer
 
+@dataclass
 class Answer:
     """Base class for answers to questions"""
     question: 'Question'
     explanation: str
-    evidence: List[TraceEvent]
+    evidence: List[TraceEvent] = field(default_factory=list)
     
     def __str__(self) -> str:
         return self.explanation
@@ -118,16 +119,41 @@ class WhyDidVariableHaveValue(Question):
         
         if not assignments:
             explanation = f"No assignment found for variable '{self.var_name}' with value '{self.value}'"
+            dependencies = []
         else:
             last_assignment = assignments[-1]
+            # Find variable read events that led to this assignment
+            dependencies = self._find_assignment_dependencies(last_assignment)
             explanation = f"Variable '{self.var_name}' got value '{self.value}' from assignment at line {last_assignment.lineno}"
+            if dependencies:
+                explanation += f" (depends on {len(dependencies)} variable reads)"
         
         return ValueSourceAnswer(
             question=self,
             explanation=explanation,
-            evidence=assignments,
+            evidence=assignments + dependencies,
             source_events=assignments
         )
+    
+    def _find_assignment_dependencies(self, assignment_event: TraceEvent) -> List[TraceEvent]:
+        """Find events with dependencies that contributed to this assignment"""
+        dependencies = []
+        
+        # The assignment event itself should contain deps information
+        if assignment_event.data.get('deps'):
+            # Look for earlier assignment events that created the dependent variables
+            deps = assignment_event.data.get('deps', [])
+            for event in self.tracer.events:
+                if (event.event_id < assignment_event.event_id and
+                    event.filename == assignment_event.filename and
+                    event.event_type in ['assign', 'aug_assign']):
+                    
+                    # Check if this event assigned to one of our dependencies
+                    var_name = event.data.get('var_name')
+                    if var_name in deps:
+                        dependencies.append(event)
+        
+        return dependencies
 
 
 class WhyDidFunctionReturn(Question):
@@ -177,20 +203,22 @@ class WhyDidFunctionReturn(Question):
         )
     
     def _find_return_dependencies(self, return_event: TraceEvent) -> List[TraceEvent]:
-        """Find the chain of events that led to this return value"""
+        """Find the chain of events that led to this return value using deps information"""
         dependencies = []
         
-        # Look for assignments and calculations that contributed to the return value
+        # Look for events with deps that occurred before the return
         for event in self.tracer.events:
             if (event.event_id < return_event.event_id and
-                event.event_type in ['assign', 'call_post'] and
                 event.filename == return_event.filename):
                 
-                # Check if any variable in this event's locals matches the return value
-                for var_name, var_value in event.locals_snapshot.items():
-                    if var_value == self.return_value:
-                        dependencies.append(event)
-                        break
+                # Include events that have dependency information
+                if event.data.get('deps'):
+                    dependencies.append(event)
+                
+                # Include assignments that contributed to the return value
+                elif (event.event_type in ['assign', 'aug_assign'] and
+                      event.data.get('value') == self.return_value):
+                    dependencies.append(event)
         
         return dependencies
 
@@ -388,6 +416,66 @@ class WhyDidObjectGetCreated(Question):
         return dependencies
 
 
+class WhyDidConditionEvaluateTo(Question):
+    """Question about why a condition evaluated to a specific boolean value"""
+    
+    def __init__(self, tracer: WhylineTracer, condition_text: str, expected_result: bool, 
+                 filename: str = None, line_no: int = None):
+        super().__init__(tracer, condition_text, f"Why did condition '{condition_text}' evaluate to {expected_result}")
+        self.condition_text = condition_text
+        self.expected_result = expected_result
+        self.filename = filename
+        self.line_no = line_no
+    
+    def analyze(self) -> ValueSourceAnswer:
+        """Find why the condition evaluated to the expected result"""
+        # Find branch events with this condition
+        condition_events = []
+        read_dependencies = []
+        
+        for event in self.tracer.events:
+            # Look for branch events with matching condition
+            if (event.event_type == 'branch' and 
+                event.data.get('condition') == self.condition_text and
+                event.data.get('result') == self.expected_result):
+                
+                if self.filename and event.filename != self.filename and event.filename != "<string>":
+                    continue
+                if self.line_no and event.lineno != self.line_no:
+                    continue
+                    
+                condition_events.append(event)
+                
+                # The branch event should contain deps information
+                if event.data.get('deps'):
+                    deps = event.data.get('deps', [])
+                    # Find assignment events that created the dependent variables
+                    for dep_event in self.tracer.events:
+                        if (dep_event.event_id < event.event_id and
+                            dep_event.filename == event.filename and
+                            dep_event.event_type in ['assign', 'aug_assign']):
+                            
+                            var_name = dep_event.data.get('var_name')
+                            if var_name in deps:
+                                read_dependencies.append(dep_event)
+        
+        if not condition_events:
+            explanation = f"No evaluation found for condition '{self.condition_text}' with result {self.expected_result}"
+        else:
+            last_evaluation = condition_events[-1]
+            explanation = f"Condition '{self.condition_text}' evaluated to {self.expected_result} at line {last_evaluation.lineno}"
+            if last_evaluation.data.get('deps'):
+                deps = last_evaluation.data.get('deps', [])
+                explanation += f" (depends on variables: {', '.join(sorted(deps))})"
+        
+        return ValueSourceAnswer(
+            question=self,
+            explanation=explanation,
+            evidence=condition_events + read_dependencies,
+            source_events=condition_events
+        )
+
+
 class WhyDidPropertyGetAssigned(Question):
     """Question about why a property got assigned a specific value"""
     
@@ -491,3 +579,8 @@ class QuestionAsker:
                                     object_id: int = None) -> WhyDidPropertyGetAssigned:
         """Create a question about why a property got assigned a specific value"""
         return WhyDidPropertyGetAssigned(self.tracer, property_name, value, object_id)
+    
+    def why_did_condition_evaluate_to(self, condition_text: str, expected_result: bool,
+                                    filename: str = None, line_no: int = None) -> WhyDidConditionEvaluateTo:
+        """Create a question about why a condition evaluated to a specific boolean value"""
+        return WhyDidConditionEvaluateTo(self.tracer, condition_text, expected_result, filename, line_no)

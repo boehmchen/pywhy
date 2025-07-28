@@ -137,3 +137,7 @@ class TraceEvent:
     def get_result(self) -> Any:
         """Get result for condition/branch events"""
         return self.data.get('result') or self.data.get('decision') or self.data.get('taken')
+    
+    def get_deps(self) -> list:
+        """Get list of variable dependencies for this event"""
+        return self.data.get('deps', [])

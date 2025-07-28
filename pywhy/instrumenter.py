@@ -26,6 +26,34 @@ class InstrumentationInfo:
     description: str = ""
 
 
+class VariableCollector(ast.NodeVisitor):
+    """Collect variable names read in an expression"""
+    
+    def __init__(self):
+        self.variables = set()
+    
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            self.variables.add(node.id)
+        self.generic_visit(node)
+    
+    def visit_Attribute(self, node):
+        # For obj.attr, we want to track 'obj' as a read variable
+        self.visit(node.value)
+    
+    def visit_Subscript(self, node):
+        # For arr[index], we want to track both 'arr' and 'index' variables
+        self.visit(node.value)
+        self.visit(node.slice)
+    
+    @classmethod
+    def get_read_variables(cls, node: ast.AST) -> list:
+        """Get list of variables read in an expression"""
+        collector = cls()
+        collector.visit(node)
+        return sorted(list(collector.variables))
+
+
 class ContextFixer(ast.NodeTransformer):
     """Fix AST contexts to ensure proper Load/Store usage"""
     
@@ -118,6 +146,18 @@ class WhylineInstrumenter(ast.NodeTransformer):
         fixed = self.context_fixer.visit(copied)
         return fixed
     
+    def add_deps_to_args(self, node: ast.AST, args: List[ast.expr]) -> List[ast.expr]:
+        """Add variable dependencies to tracer call arguments"""
+        deps = VariableCollector.get_read_variables(node)
+        
+        if deps:
+            args.extend([
+                ast.Constant(value='deps'),
+                ast.List(elts=[ast.Constant(value=var) for var in deps], ctx=ast.Load())
+            ])
+        
+        return args
+    
 
     # === AST Node Visitors ===
     def visit_Module(self, node: ast.Module) -> ast.Module:
@@ -174,6 +214,9 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     ast.Name(id=target.id, ctx=ast.Load())  # Fresh node with Load context
                 ]
                 
+                # Add variable dependencies from the assignment value
+                args = self.add_deps_to_args(node.value, args)
+                
                 tracer_call = self.create_tracer_call(EventType.ASSIGN, node, args)
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
                 
@@ -192,6 +235,17 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     self.safe_copy_for_expression(node.value)
                 ]
                 
+                # Add variable dependencies from both object reference and assignment value
+                deps_from_obj = VariableCollector.get_read_variables(target.value)
+                deps_from_value = VariableCollector.get_read_variables(node.value)
+                all_deps = sorted(list(set(deps_from_obj + deps_from_value)))
+                
+                if all_deps:
+                    args.extend([
+                        ast.Constant(value='deps'),
+                        ast.List(elts=[ast.Constant(value=var) for var in all_deps], ctx=ast.Load())
+                    ])
+                
                 tracer_call = self.create_tracer_call(EventType.ATTR_ASSIGN, node, args)
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
                 
@@ -200,6 +254,10 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 
                 container_ref = self.safe_copy_for_expression(target.value)
                 value_ref = self.safe_copy_for_expression(node.value)
+                
+                # Collect dependencies from all parts
+                deps_from_container = VariableCollector.get_read_variables(target.value)
+                deps_from_value = VariableCollector.get_read_variables(node.value)
                 
                 # Handle different types of subscripts
                 if isinstance(target.slice, ast.Slice):
@@ -218,6 +276,18 @@ class WhylineInstrumenter(ast.NodeTransformer):
                         ast.Constant(value='value'),
                         value_ref
                     ]
+                    
+                    # Add slice bounds dependencies
+                    deps_from_slice = []
+                    if target.slice.lower:
+                        deps_from_slice.extend(VariableCollector.get_read_variables(target.slice.lower))
+                    if target.slice.upper:
+                        deps_from_slice.extend(VariableCollector.get_read_variables(target.slice.upper))
+                    if target.slice.step:
+                        deps_from_slice.extend(VariableCollector.get_read_variables(target.slice.step))
+                    
+                    all_deps = sorted(list(set(deps_from_container + deps_from_value + deps_from_slice)))
+                    
                     tracer_call = self.create_tracer_call(EventType.SLICE_ASSIGN, node, args)
                 else:
                     # Simple subscript assignment: arr[index] = value
@@ -230,7 +300,18 @@ class WhylineInstrumenter(ast.NodeTransformer):
                         ast.Constant(value='value'),
                         value_ref
                     ]
+                    
+                    deps_from_index = VariableCollector.get_read_variables(target.slice)
+                    all_deps = sorted(list(set(deps_from_container + deps_from_value + deps_from_index)))
+                    
                     tracer_call = self.create_tracer_call(EventType.SUBSCRIPT_ASSIGN, node, args)
+                
+                # Add dependencies to args
+                if all_deps:
+                    args.extend([
+                        ast.Constant(value='deps'),
+                        ast.List(elts=[ast.Constant(value=var) for var in all_deps], ctx=ast.Load())
+                    ])
 
                 instrumented_stmts.append(ast.Expr(value=tracer_call))
         
@@ -256,6 +337,17 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='value'),
                 ast.Name(id=node.target.id, ctx=ast.Load())  # Value after assignment
             ]
+            
+            # Add dependencies: both the target variable (being read) and the value expression
+            deps_from_target = [node.target.id]  # The target variable is read in augmented assignment
+            deps_from_value = VariableCollector.get_read_variables(node.value)
+            all_deps = sorted(list(set(deps_from_target + deps_from_value)))
+            
+            if all_deps:
+                args.extend([
+                    ast.Constant(value='deps'),
+                    ast.List(elts=[ast.Constant(value=var) for var in all_deps], ctx=ast.Load())
+                ])
 
             tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
@@ -273,6 +365,18 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='value'),
                 self.safe_copy_for_expression(node.target)
             ]
+            
+            # Add dependencies from object, target attribute, and value
+            deps_from_obj = VariableCollector.get_read_variables(node.target.value)
+            deps_from_target = VariableCollector.get_read_variables(node.target)  # obj.attr is read
+            deps_from_value = VariableCollector.get_read_variables(node.value)
+            all_deps = sorted(list(set(deps_from_obj + deps_from_target + deps_from_value)))
+            
+            if all_deps:
+                args.extend([
+                    ast.Constant(value='deps'),
+                    ast.List(elts=[ast.Constant(value=var) for var in all_deps], ctx=ast.Load())
+                ])
 
             tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
@@ -291,6 +395,19 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='value'),
                 self.safe_copy_for_expression(node.target)
             ]
+            
+            # Add dependencies from container, index, target subscript, and value
+            deps_from_container = VariableCollector.get_read_variables(node.target.value)
+            deps_from_index = VariableCollector.get_read_variables(node.target.slice)
+            deps_from_target = VariableCollector.get_read_variables(node.target)  # arr[index] is read
+            deps_from_value = VariableCollector.get_read_variables(node.value)
+            all_deps = sorted(list(set(deps_from_container + deps_from_index + deps_from_target + deps_from_value)))
+            
+            if all_deps:
+                args.extend([
+                    ast.Constant(value='deps'),
+                    ast.List(elts=[ast.Constant(value=var) for var in all_deps], ctx=ast.Load())
+                ])
             
             tracer_call = self.create_tracer_call(EventType.AUG_ASSIGN, node, args)
             instrumented_stmts.append(ast.Expr(value=tracer_call))
@@ -348,7 +465,7 @@ class WhylineInstrumenter(ast.NodeTransformer):
         return node 
     
     ### Control Flow ###
-    def visit_If(self, node: ast.If) -> ast.If:
+    def visit_If(self, node: ast.If) -> List[ast.stmt]:
         """Instrument if statements with integrated condition and branch logic"""
         # Transform children first
         self.generic_visit(node)
@@ -356,6 +473,9 @@ class WhylineInstrumenter(ast.NodeTransformer):
         # Get condition as string for debugging
         condition_str = ast.unparse(node.test) if hasattr(ast, 'unparse') else str(node.test)
         condition_copy = self.safe_copy_for_expression(node.test)
+        
+        # Track variable reads in the condition BEFORE the if statement
+        instrumented_stmts = []
         
         # Add branch tracing to if body (if condition is true)
         if_args = [
@@ -366,6 +486,10 @@ class WhylineInstrumenter(ast.NodeTransformer):
             ast.Constant(value='decision'),
             ast.Constant(value='if_block')
         ]
+        
+        # Add dependencies from the condition
+        if_args = self.add_deps_to_args(node.test, if_args)
+        
         if_tracer = self.create_tracer_call(EventType.BRANCH, node, if_args)
         node.body.insert(0, ast.Expr(value=if_tracer))
         
@@ -381,6 +505,10 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     ast.Constant(value='decision'),
                     ast.Constant(value='elif_block')
                 ]
+                
+                # Add dependencies from the condition
+                elif_args = self.add_deps_to_args(node.test, elif_args)
+                
                 elif_tracer = self.create_tracer_call(EventType.BRANCH, node, elif_args)
                 node.orelse.insert(0, ast.Expr(value=elif_tracer))
             else:
@@ -393,6 +521,10 @@ class WhylineInstrumenter(ast.NodeTransformer):
                     ast.Constant(value='decision'),
                     ast.Constant(value='else_block')
                 ]
+                
+                # Add dependencies from the condition
+                else_args = self.add_deps_to_args(node.test, else_args)
+                
                 else_tracer = self.create_tracer_call(EventType.BRANCH, node, else_args)
                 node.orelse.insert(0, ast.Expr(value=else_tracer))
         else:
@@ -405,10 +537,16 @@ class WhylineInstrumenter(ast.NodeTransformer):
                 ast.Constant(value='decision'),
                 ast.Constant(value='skip_block')
             ]
+            
+            # Add dependencies from the condition
+            skip_args = self.add_deps_to_args(node.test, skip_args)
+            
             skip_tracer = self.create_tracer_call(EventType.BRANCH, node, skip_args)
             node.orelse = [ast.Expr(value=skip_tracer)]
         
-        return node
+        # Add the instrumented if statement
+        instrumented_stmts.append(node)
+        return instrumented_stmts
     
     ### Loop Instrumentation ###
     def visit_For(self, node: ast.For) -> ast.For:
@@ -452,6 +590,9 @@ class WhylineInstrumenter(ast.NodeTransformer):
             ast.Constant(value='result'),
             test_copy
         ]
+        
+        # Add dependencies from the condition
+        args = self.add_deps_to_args(node.test, args)
         
         # Add while condition tracing
         while_tracer = self.create_tracer_call(EventType.WHILE_CONDITION, node, args)
