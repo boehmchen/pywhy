@@ -2151,3 +2151,196 @@ complex_dict = {(i, j): i*j for i in range(2) for j in range(2)}
         assert_variable_value_event(actual_events, "dict_comp", {0: 0, 2: 4, 4: 16})
         assert_variable_value_event(actual_events, "complex_result", 120)
         assert_variable_value_event(actual_events, "conditional_assign", 25)
+
+
+@pytest.mark.unit
+class TestMethodCallDependencyTracking:
+    """Test enhanced dependency tracking for method calls."""
+    
+    def test_simple_method_call_deps(self, tracer, instrumented_execution):
+        """Test that method calls are properly tracked in dependencies."""
+        code = """
+class Calculator:
+    def add(self, a, b):
+        return a + b
+
+calc = Calculator()
+result = calc.add(3, 4)
+"""
+        instrumented_execution(code)
+        actual_events = tracer.events
+        
+        # Find the assignment event for result
+        result_assignments = [e for e in actual_events 
+                            if (e.event_type == EventType.ASSIGN and 
+                                e.data.get('var_name') == 'result')]
+        
+        assert len(result_assignments) == 1, "Should have exactly one result assignment"
+        
+        result_event = result_assignments[0]
+        deps = result_event.data.get('deps', [])
+        
+        # Should include both the object and the method
+        assert 'calc' in deps, f"Should track 'calc' object in deps: {deps}"
+        assert 'calc.add' in deps, f"Should track 'calc.add' method in deps: {deps}"
+        assert result_event.data.get('value') == 7, "Result should be 7"
+    
+    def test_method_call_with_variables_deps(self, tracer, instrumented_execution):
+        """Test method calls with variable arguments track all dependencies."""
+        code = """
+class Calculator:
+    def multiply(self, a, b):
+        return a * b
+
+calc = Calculator()
+x = 5
+y = 3
+result = calc.multiply(x, y)
+"""
+        instrumented_execution(code)
+        actual_events = tracer.events
+        
+        # Find the assignment event for result
+        result_assignments = [e for e in actual_events 
+                            if (e.event_type == EventType.ASSIGN and 
+                                e.data.get('var_name') == 'result')]
+        
+        assert len(result_assignments) == 1, "Should have exactly one result assignment"
+        
+        result_event = result_assignments[0]
+        deps = result_event.data.get('deps', [])
+        
+        # Should include object, method, and variables
+        assert 'calc' in deps, f"Should track 'calc' object in deps: {deps}"
+        assert 'calc.multiply' in deps, f"Should track 'calc.multiply' method in deps: {deps}"
+        assert 'x' in deps, f"Should track variable 'x' in deps: {deps}"
+        assert 'y' in deps, f"Should track variable 'y' in deps: {deps}"
+        assert result_event.data.get('value') == 15, "Result should be 15"
+    
+    def test_nested_method_calls_deps(self, tracer, instrumented_execution):
+        """Test nested method calls track all methods involved."""
+        code = """
+class Calculator:
+    def add(self, a, b):
+        return a + b
+    def multiply(self, a, b):
+        return a * b
+
+calc = Calculator()
+x = 2
+result = calc.add(calc.multiply(3, 4), x)
+"""
+        instrumented_execution(code)
+        actual_events = tracer.events
+        
+        # Find the assignment event for result
+        result_assignments = [e for e in actual_events 
+                            if (e.event_type == EventType.ASSIGN and 
+                                e.data.get('var_name') == 'result')]
+        
+        assert len(result_assignments) == 1, "Should have exactly one result assignment"
+        
+        result_event = result_assignments[0]
+        deps = result_event.data.get('deps', [])
+        
+        # Should include object, both methods, and variable
+        assert 'calc' in deps, f"Should track 'calc' object in deps: {deps}"
+        assert 'calc.add' in deps, f"Should track 'calc.add' method in deps: {deps}"
+        assert 'calc.multiply' in deps, f"Should track 'calc.multiply' method in deps: {deps}"
+        assert 'x' in deps, f"Should track variable 'x' in deps: {deps}"
+        assert result_event.data.get('value') == 14, "Result should be 14 (3*4 + 2)"
+    
+    def test_function_vs_method_call_distinction(self, tracer, instrumented_execution):
+        """Test that function calls and method calls are distinguishable in deps."""
+        code = """
+def add_function(a, b):
+    return a + b
+
+class Calculator:
+    def add_method(self, a, b):
+        return a + b
+
+calc = Calculator()
+result1 = add_function(3, 4)        # Function call
+result2 = calc.add_method(5, 6)     # Method call
+result3 = add_function(calc.add_method(1, 2), 10)  # Mixed calls
+"""
+        instrumented_execution(code)
+        actual_events = tracer.events
+        
+        # Find assignment events
+        result1_events = [e for e in actual_events 
+                         if (e.event_type == EventType.ASSIGN and 
+                             e.data.get('var_name') == 'result1')]
+        result2_events = [e for e in actual_events 
+                         if (e.event_type == EventType.ASSIGN and 
+                             e.data.get('var_name') == 'result2')]
+        result3_events = [e for e in actual_events 
+                         if (e.event_type == EventType.ASSIGN and 
+                             e.data.get('var_name') == 'result3')]
+        
+        assert len(result1_events) == 1, "Should have result1 assignment"
+        assert len(result2_events) == 1, "Should have result2 assignment"
+        assert len(result3_events) == 1, "Should have result3 assignment"
+        
+        # Test function call dependencies
+        result1_deps = result1_events[0].data.get('deps', [])
+        assert 'add_function' in result1_deps, f"Should track function call: {result1_deps}"
+        assert 'add_function.add_method' not in result1_deps, "Should not have method format for function"
+        
+        # Test method call dependencies
+        result2_deps = result2_events[0].data.get('deps', [])
+        assert 'calc' in result2_deps, f"Should track object: {result2_deps}"
+        assert 'calc.add_method' in result2_deps, f"Should track method call: {result2_deps}"
+        
+        # Test mixed call dependencies
+        result3_deps = result3_events[0].data.get('deps', [])
+        assert 'add_function' in result3_deps, f"Should track function: {result3_deps}"
+        assert 'calc' in result3_deps, f"Should track object: {result3_deps}"
+        assert 'calc.add_method' in result3_deps, f"Should track method: {result3_deps}"
+        
+        # Verify values
+        assert result1_events[0].data.get('value') == 7, "result1 should be 7"
+        assert result2_events[0].data.get('value') == 11, "result2 should be 11"
+        assert result3_events[0].data.get('value') == 13, "result3 should be 13 (1+2+10)"
+    
+    def test_chained_method_calls_deps(self, tracer, instrumented_execution):
+        """Test chained method calls track all methods in the chain."""
+        code = """
+class FluentCalculator:
+    def __init__(self, value=0):
+        self.value = value
+    
+    def add(self, x):
+        self.value += x
+        return self
+    
+    def multiply(self, x):
+        self.value *= x
+        return self
+    
+    def get_value(self):
+        return self.value
+
+calc = FluentCalculator(5)
+result = calc.add(3).multiply(2).get_value()
+"""
+        instrumented_execution(code)
+        actual_events = tracer.events
+        
+        # Find the assignment event for result
+        result_assignments = [e for e in actual_events 
+                            if (e.event_type == EventType.ASSIGN and 
+                                e.data.get('var_name') == 'result')]
+        
+        assert len(result_assignments) == 1, "Should have exactly one result assignment"
+        
+        result_event = result_assignments[0]
+        deps = result_event.data.get('deps', [])
+        
+        # Should include object and all chained methods
+        assert 'calc' in deps, f"Should track 'calc' object in deps: {deps}"
+        assert 'calc.add' in deps, f"Should track 'calc.add' method in deps: {deps}"
+        assert 'calc.multiply' in deps, f"Should track 'calc.multiply' method in deps: {deps}"
+        assert 'calc.get_value' in deps, f"Should track 'calc.get_value' method in deps: {deps}"
+        assert result_event.data.get('value') == 16, "Result should be 16 ((5+3)*2)"

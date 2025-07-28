@@ -40,6 +40,29 @@ class VariableCollector(ast.NodeVisitor):
     def visit_Attribute(self, node):
         # For obj.attr, we want to track 'obj' as a read variable
         self.visit(node.value)
+        
+        # Track attribute access for method calls
+        self._add_attribute_access(node)
+    
+    def _add_attribute_access(self, node):
+        """Add attribute access to variables, handling both simple and chained cases."""
+        # Try to get the base object name by traversing the node tree
+        base_name = self._get_base_name(node.value)
+        if base_name:
+            full_attr = f"{base_name}.{node.attr}"
+            self.variables.add(full_attr)
+    
+    def _get_base_name(self, node):
+        """Get the base name from a potentially nested expression."""
+        if isinstance(node, ast.Name):
+            return node.id
+        elif isinstance(node, ast.Attribute):
+            # For chained attributes, get the leftmost base name
+            return self._get_base_name(node.value)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            # For method calls, get the base name of the method being called
+            return self._get_base_name(node.func.value)
+        return None
     
     def visit_Subscript(self, node):
         # For arr[index], we want to track both 'arr' and 'index' variables
