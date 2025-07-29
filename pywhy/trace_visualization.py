@@ -4,7 +4,8 @@ Provides functions to create string representations and diffs of execution trace
 """
 
 import difflib
-from typing import List
+import re
+from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from pywhy.tracer import TraceEvent
 from pywhy.events import EventType
@@ -224,6 +225,133 @@ def compare_traces(actual_events: List[TraceEvent],
     )
 
 
+def _compute_char_level_diff(old_text: str, new_text: str) -> Tuple[str, str]:
+    """Compute character-level differences between two strings."""
+    # Use SequenceMatcher for character-level diff
+    matcher = difflib.SequenceMatcher(None, old_text, new_text)
+    
+    old_html = []
+    new_html = []
+    
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_part = old_text[i1:i2]
+        new_part = new_text[j1:j2]
+        
+        if tag == 'equal':
+            # Same content in both
+            old_html.append(_html_escape(old_part))
+            new_html.append(_html_escape(new_part))
+        elif tag == 'delete':
+            # Content removed from old
+            old_html.append(f'<span style="background-color: #ffdddd; color: #cc0000;">{_html_escape(old_part)}</span>')
+        elif tag == 'insert':
+            # Content added to new
+            new_html.append(f'<span style="background-color: #ddffdd; color: #008800;">{_html_escape(new_part)}</span>')
+        elif tag == 'replace':
+            # Content changed
+            old_html.append(f'<span style="background-color: #ffdddd; color: #cc0000;">{_html_escape(old_part)}</span>')
+            new_html.append(f'<span style="background-color: #ddffdd; color: #008800;">{_html_escape(new_part)}</span>')
+    
+    return ''.join(old_html), ''.join(new_html)
+
+
+def _html_escape(text: str) -> str:
+    """Escape HTML characters."""
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
+
+def _parse_diff_and_highlight(expected_lines: List[str], actual_lines: List[str]) -> Tuple[str, str]:
+    """Parse diff and create highlighted HTML for both expected and actual traces."""
+    # Create unified diff to identify changes
+    diff_lines = list(difflib.unified_diff(
+        expected_lines, actual_lines,
+        fromfile='Expected', tofile='Actual',
+        lineterm=''
+    ))
+    
+    # Parse diff to identify line changes
+    expected_highlighted = []
+    actual_highlighted = []
+    
+    # Track line numbers and changes
+    expected_line_states = {}  # line_number -> 'removed' | 'modified' | None
+    actual_line_states = {}    # line_number -> 'added' | 'modified' | None
+    line_pairs = {}           # expected_line_num -> actual_line_num for modified lines
+    
+    expected_line_num = 0
+    actual_line_num = 0
+    
+    i = 0
+    while i < len(diff_lines):
+        line = diff_lines[i]
+        
+        if line.startswith('@@'):
+            # Parse hunk header to get line numbers
+            match = re.match(r'@@ -(\d+),?\d* \+(\d+),?\d* @@', line)
+            if match:
+                expected_line_num = int(match.group(1)) - 1
+                actual_line_num = int(match.group(2)) - 1
+        elif line.startswith('-'):
+            # Line removed from expected
+            expected_line_states[expected_line_num] = 'removed'
+            expected_line_num += 1
+        elif line.startswith('+'):
+            # Line added to actual
+            actual_line_states[actual_line_num] = 'added'
+            actual_line_num += 1
+        elif line.startswith(' '):
+            # Unchanged line
+            expected_line_num += 1
+            actual_line_num += 1
+        
+        i += 1
+    
+    # Look for modified lines (removed followed by added)
+    removed_lines = [i for i, state in expected_line_states.items() if state == 'removed']
+    added_lines = [i for i, state in actual_line_states.items() if state == 'added']
+    
+    # Pair up consecutive removed/added lines as modifications
+    for i, exp_line in enumerate(removed_lines):
+        if i < len(added_lines):
+            act_line = added_lines[i]
+            expected_line_states[exp_line] = 'modified'
+            actual_line_states[act_line] = 'modified'
+            line_pairs[exp_line] = act_line
+    
+    # Generate highlighted HTML
+    for i, line in enumerate(expected_lines):
+        state = expected_line_states.get(i)
+        if state == 'removed':
+            expected_highlighted.append(f'<div style="background-color: rgba(255, 0, 0, 0.1);">{_html_escape(line)}</div>')
+        elif state == 'modified':
+            actual_line_num = line_pairs[i]
+            expected_char_diff, _ = _compute_char_level_diff(line, actual_lines[actual_line_num])
+            expected_highlighted.append(f'<div style="background-color: rgba(255, 0, 0, 0.1);">{expected_char_diff}</div>')
+        else:
+            expected_highlighted.append(f'<div>{_html_escape(line)}</div>')
+    
+    for i, line in enumerate(actual_lines):
+        state = actual_line_states.get(i)
+        if state == 'added':
+            actual_highlighted.append(f'<div style="background-color: rgba(0, 255, 0, 0.1);">{_html_escape(line)}</div>')
+        elif state == 'modified':
+            # Find corresponding expected line
+            expected_line_num = None
+            for exp_num, act_num in line_pairs.items():
+                if act_num == i:
+                    expected_line_num = exp_num
+                    break
+            if expected_line_num is not None:
+                _, actual_char_diff = _compute_char_level_diff(expected_lines[expected_line_num], line)
+                actual_highlighted.append(f'<div style="background-color: rgba(0, 255, 0, 0.1);">{actual_char_diff}</div>')
+            else:
+                actual_highlighted.append(f'<div style="background-color: rgba(0, 255, 0, 0.1);">{_html_escape(line)}</div>')
+        else:
+            actual_highlighted.append(f'<div>{_html_escape(line)}</div>')
+    
+    return '\n'.join(expected_highlighted), '\n'.join(actual_highlighted)
+
+
 def display_trace_comparison(comparison: TraceComparison, show_full_traces: bool = True) -> str:
     """
     Display a formatted trace comparison for Jupyter notebook output.
@@ -323,22 +451,34 @@ def create_jupyter_trace_display(actual_events: List[TraceEvent],
             html_parts.append(f'<li>{detail}</li>')
         html_parts.append('</ul></div>')
     
-    # Traces in columns
+    # Traces in columns with diff highlighting
     html_parts.append('<div style="display: flex; gap: 20px;">')
+    
+    # Parse lines and create highlighted versions
+    expected_lines = comparison.expected_trace_str.splitlines()
+    actual_lines = comparison.actual_trace_str.splitlines()
+    
+    if not comparison.matches:
+        # Use diff highlighting
+        expected_highlighted, actual_highlighted = _parse_diff_and_highlight(expected_lines, actual_lines)
+    else:
+        # No highlighting needed for matching traces
+        expected_highlighted = '\n'.join(f'<div>{_html_escape(line)}</div>' for line in expected_lines)
+        actual_highlighted = '\n'.join(f'<div>{_html_escape(line)}</div>' for line in actual_lines)
     
     # Expected trace
     html_parts.append('<div style="flex: 1;">')
     html_parts.append('<h4>Expected Trace:</h4>')
-    html_parts.append('<pre style="background-color: #f0f0f0; padding: 10px; font-family: monospace; font-size: 12px;">')
-    html_parts.append(comparison.expected_trace_str.replace('<', '&lt;').replace('>', '&gt;'))
-    html_parts.append('</pre></div>')
+    html_parts.append('<div style="background-color: #f0f0f0; padding: 10px; font-family: monospace; font-size: 12px; line-height: 1.4; border: 1px solid #ddd;">')
+    html_parts.append(expected_highlighted)
+    html_parts.append('</div></div>')
     
     # Actual trace
     html_parts.append('<div style="flex: 1;">')
     html_parts.append('<h4>Actual Trace:</h4>')
-    html_parts.append('<pre style="background-color: #f0f0f0; padding: 10px; font-family: monospace; font-size: 12px;">')
-    html_parts.append(comparison.actual_trace_str.replace('<', '&lt;').replace('>', '&gt;'))
-    html_parts.append('</pre></div>')
+    html_parts.append('<div style="background-color: #f0f0f0; padding: 10px; font-family: monospace; font-size: 12px; line-height: 1.4; border: 1px solid #ddd;">')
+    html_parts.append(actual_highlighted)
+    html_parts.append('</div></div>')
     
     html_parts.append('</div>')
     
